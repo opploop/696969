@@ -641,9 +641,6 @@ local Templates = {
         ShadowColor = "DarkColor",
         ShadowThickness = 1.5,
         ShadowTransparency = 0,
-        OuterShadowColor = Color3.fromRGB(0, 0, 0),
-        OuterShadowThickness = 14,
-        OuterShadowTransparency = 0.72,
         RainbowBorder = false,
         RainbowBorderTargets = nil,
         RainbowBorderSpeed = 0.12,
@@ -3123,9 +3120,6 @@ function Library:AddOutline(Frame: GuiObject, Info)
     local ShadowThickness = Info.ShadowThickness or 1.5
     local ShadowTransparency = Info.ShadowTransparency or 0
     local ShadowColor = Info.ShadowColor or "DarkColor"
-    local OuterShadowColor = Info.OuterShadowColor or Color3.fromRGB(0, 0, 0)
-    local OuterShadowThickness = Info.OuterShadowThickness or math.max(ShadowThickness + 8, 14)
-    local OuterShadowTransparency = Info.OuterShadowTransparency or 0.72
     local ShadowStroke = New("UIStroke", {
         Color = ShadowColor,
         Thickness = ShadowThickness,
@@ -3133,25 +3127,12 @@ function Library:AddOutline(Frame: GuiObject, Info)
         ZIndex = Info.ShadowZIndex or 1,
         Parent = Frame,
     })
-    local GlowStrokes = {}
-    if ShadowThickness >= 3 and ShadowTransparency < 1 and Info.SoftShadow ~= false then
-        table.insert(
-            GlowStrokes,
-            New("UIStroke", {
-                Color = OuterShadowColor,
-                Thickness = OuterShadowThickness,
-                Transparency = OuterShadowTransparency,
-                ZIndex = (Info.ShadowZIndex or 1) - 1,
-                Parent = Frame,
-            })
-        )
-    end
 
     if Info.Rainbow == true or Info.RainbowTarget ~= nil then
         Library:RegisterRainbowStroke(OutlineStroke, Info)
     end
 
-    return OutlineStroke, ShadowStroke, GlowStrokes
+    return OutlineStroke, ShadowStroke
 end
 
 function Library:AddGradient(Frame: GuiObject, Info)
@@ -12356,7 +12337,6 @@ function Library:CreateWindow(WindowInfo)
     local WindowGradient
     local MainOutlineStroke
     local MainShadowStroke
-    local MainGlowStrokes
     local BottomBackground
     local TopBarBottomCover
     local FooterLabel
@@ -12433,16 +12413,13 @@ function Library:CreateWindow(WindowInfo)
                 Parent = MainFrame,
             })
         )
-        MainOutlineStroke, MainShadowStroke, MainGlowStrokes = Library:AddOutline(MainFrame, {
+        MainOutlineStroke, MainShadowStroke = Library:AddOutline(MainFrame, {
             Color = WindowInfo.BorderColor,
             Thickness = WindowInfo.BorderThickness,
             Transparency = WindowInfo.BorderTransparency,
             ShadowColor = WindowInfo.ShadowColor,
             ShadowThickness = WindowInfo.ShadowThickness,
             ShadowTransparency = WindowInfo.ShadowTransparency,
-            OuterShadowColor = WindowInfo.OuterShadowColor,
-            OuterShadowThickness = WindowInfo.OuterShadowThickness,
-            OuterShadowTransparency = WindowInfo.OuterShadowTransparency,
             RainbowTarget = "Window",
         })
         if WindowInfo.Gradient then
@@ -12994,28 +12971,9 @@ function Library:CreateWindow(WindowInfo)
         end
         if Info.ShadowThickness then
             MainShadowStroke.Thickness = Info.ShadowThickness
-            for _, GlowStroke in MainGlowStrokes or {} do
-                GlowStroke.Thickness = math.max(Info.ShadowThickness + 8, 14)
-            end
         end
         if Info.ShadowTransparency then
             MainShadowStroke.Transparency = Info.ShadowTransparency
-        end
-        if Info.OuterShadowColor then
-            local OuterShadowColor = GetSchemeValue(Info.OuterShadowColor) or Info.OuterShadowColor
-            for _, GlowStroke in MainGlowStrokes or {} do
-                GlowStroke.Color = OuterShadowColor
-            end
-        end
-        if Info.OuterShadowThickness then
-            for _, GlowStroke in MainGlowStrokes or {} do
-                GlowStroke.Thickness = Info.OuterShadowThickness
-            end
-        end
-        if Info.OuterShadowTransparency then
-            for _, GlowStroke in MainGlowStrokes or {} do
-                GlowStroke.Transparency = Info.OuterShadowTransparency
-            end
         end
     end
 
