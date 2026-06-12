@@ -1944,7 +1944,7 @@ export type Library = {
             RainbowSaturation: number?,
             RainbowValue: number?,
         }?
-    ) -> (UIStroke, UIStroke, UIStroke?),
+    ) -> (UIStroke, UIStroke, { UIStroke }?),
     AddGradient: (
         self: Library,
         Frame: GuiObject,
