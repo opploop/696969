@@ -512,7 +512,7 @@ local Library = {
     DPIScale = 1,
     MobileHitSize = 28,
     CornerRadius = 4,
-    CornerRadiusDropdown = false, -- Temporary
+    CornerRadiusDropdown = true,
 
     IsLightTheme = false,
     Scheme = {
@@ -3130,8 +3130,8 @@ function Library:AddOutline(Frame: GuiObject, Info)
     if ShadowThickness >= 3 and ShadowTransparency < 1 and Info.SoftShadow ~= false then
         GlowStroke = New("UIStroke", {
             Color = ShadowColor,
-            Thickness = ShadowThickness * 2.25,
-            Transparency = math.clamp(ShadowTransparency + 0.13, 0.82, 0.96),
+            Thickness = ShadowThickness * 1.7,
+            Transparency = math.clamp(ShadowTransparency + 0.09, 0.9, 0.97),
             ZIndex = (Info.ShadowZIndex or 1) - 1,
             Parent = Frame,
         })
@@ -12348,6 +12348,7 @@ function Library:CreateWindow(WindowInfo)
     local MainShadowStroke
     local MainGlowStroke
     local BottomBackground
+    local TopBarBottomCover
     local FooterLabel
     local FooterLeftLabel
     local FooterRightLabel
@@ -12497,7 +12498,25 @@ function Library:CreateWindow(WindowInfo)
             Size = UDim2.new(1, 0, 0, 48),
             Parent = MainFrame,
         })
+        table.insert(
+            Library.Corners,
+            New("UICorner", {
+                CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+                Parent = TopBar,
+            })
+        )
         RegisterBackgroundImageSurface(TopBar, 0, "Content")
+        TopBarBottomCover = New("Frame", {
+            AnchorPoint = Vector2.new(0, 1),
+            BackgroundColor3 = function()
+                return Library:GetBetterColor(Library.Scheme.BackgroundColor, 2)
+            end,
+            BackgroundTransparency = 0,
+            Position = UDim2.fromScale(0, 1),
+            Size = UDim2.new(1, 0, 0, WindowInfo.CornerRadius),
+            Parent = TopBar,
+        })
+        RegisterBackgroundImageSurface(TopBarBottomCover, 0, "Content")
         Library:MakeDraggable(MainFrame, TopBar, false, true)
 
         --// Title
@@ -12972,13 +12991,13 @@ function Library:CreateWindow(WindowInfo)
         if Info.ShadowThickness then
             MainShadowStroke.Thickness = Info.ShadowThickness
             if MainGlowStroke then
-                MainGlowStroke.Thickness = Info.ShadowThickness * 2.25
+                MainGlowStroke.Thickness = Info.ShadowThickness * 1.7
             end
         end
         if Info.ShadowTransparency then
             MainShadowStroke.Transparency = Info.ShadowTransparency
             if MainGlowStroke then
-                MainGlowStroke.Transparency = math.clamp(Info.ShadowTransparency + 0.13, 0.82, 0.96)
+                MainGlowStroke.Transparency = math.clamp(Info.ShadowTransparency + 0.09, 0.9, 0.97)
             end
         end
     end
@@ -13059,6 +13078,7 @@ function Library:CreateWindow(WindowInfo)
         WindowInfo.CornerRadius = Radius
 
         BottomBackground.Size = UDim2.new(1, 0, 0, 20 + Radius)
+        TopBarBottomCover.Size = UDim2.new(1, 0, 0, Radius)
 
         for _, Tab in Library.Tabs do
             if Tab.IsKeyTab then
