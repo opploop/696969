@@ -30,7 +30,7 @@ local Toggles = {}
 local Options = {}
 local Tooltips = {}
 
-local BaseURL = "https://raw.githubusercontent.com/nick0022/obsidian-modded/refs/heads/main/"
+local BaseURL = "https://raw.githubusercontent.com/opploop/696969/refs/heads/main/"
 local CustomImageManager = {}
 local CustomImageManagerAssets = {
     TransparencyTexture = {
