@@ -3116,19 +3116,32 @@ function Library:AddOutline(Frame: GuiObject, Info)
         ZIndex = Info.ZIndex or 2,
         Parent = Frame,
     })
+    local ShadowThickness = Info.ShadowThickness or 1.5
+    local ShadowTransparency = Info.ShadowTransparency or 0
+    local ShadowColor = Info.ShadowColor or "DarkColor"
     local ShadowStroke = New("UIStroke", {
-        Color = Info.ShadowColor or "DarkColor",
-        Thickness = Info.ShadowThickness or 1.5,
-        Transparency = Info.ShadowTransparency or 0,
+        Color = ShadowColor,
+        Thickness = ShadowThickness,
+        Transparency = ShadowTransparency,
         ZIndex = Info.ShadowZIndex or 1,
         Parent = Frame,
     })
+    local GlowStroke
+    if ShadowThickness >= 3 and ShadowTransparency < 1 and Info.SoftShadow ~= false then
+        GlowStroke = New("UIStroke", {
+            Color = ShadowColor,
+            Thickness = ShadowThickness * 2.25,
+            Transparency = math.clamp(ShadowTransparency + 0.13, 0.82, 0.96),
+            ZIndex = (Info.ShadowZIndex or 1) - 1,
+            Parent = Frame,
+        })
+    end
 
     if Info.Rainbow == true or Info.RainbowTarget ~= nil then
         Library:RegisterRainbowStroke(OutlineStroke, Info)
     end
 
-    return OutlineStroke, ShadowStroke
+    return OutlineStroke, ShadowStroke, GlowStroke
 end
 
 function Library:AddGradient(Frame: GuiObject, Info)
@@ -12333,6 +12346,7 @@ function Library:CreateWindow(WindowInfo)
     local WindowGradient
     local MainOutlineStroke
     local MainShadowStroke
+    local MainGlowStroke
     local BottomBackground
     local FooterLabel
     local FooterLeftLabel
@@ -12408,7 +12422,7 @@ function Library:CreateWindow(WindowInfo)
                 Parent = MainFrame,
             })
         )
-        MainOutlineStroke, MainShadowStroke = Library:AddOutline(MainFrame, {
+        MainOutlineStroke, MainShadowStroke, MainGlowStroke = Library:AddOutline(MainFrame, {
             Color = WindowInfo.BorderColor,
             Thickness = WindowInfo.BorderThickness,
             Transparency = WindowInfo.BorderTransparency,
@@ -12476,10 +12490,14 @@ function Library:CreateWindow(WindowInfo)
 
         --// Top Bar \\-
         local TopBar = New("Frame", {
-            BackgroundTransparency = 1,
+            BackgroundColor3 = function()
+                return Library:GetBetterColor(Library.Scheme.BackgroundColor, 2)
+            end,
+            BackgroundTransparency = 0,
             Size = UDim2.new(1, 0, 0, 48),
             Parent = MainFrame,
         })
+        RegisterBackgroundImageSurface(TopBar, 0, "Content")
         Library:MakeDraggable(MainFrame, TopBar, false, true)
 
         --// Title
@@ -12935,18 +12953,33 @@ function Library:CreateWindow(WindowInfo)
         end
         if Info.ShadowColor then
             MainShadowStroke.Color = GetSchemeValue(Info.ShadowColor) or Info.ShadowColor
+            if MainGlowStroke then
+                MainGlowStroke.Color = MainShadowStroke.Color
+            end
             if typeof(Info.ShadowColor) == "string" then
                 if not Library.Registry[MainShadowStroke] then
                     Library:AddToRegistry(MainShadowStroke, {})
                 end
                 Library.Registry[MainShadowStroke].Color = Info.ShadowColor
+                if MainGlowStroke then
+                    if not Library.Registry[MainGlowStroke] then
+                        Library:AddToRegistry(MainGlowStroke, {})
+                    end
+                    Library.Registry[MainGlowStroke].Color = Info.ShadowColor
+                end
             end
         end
         if Info.ShadowThickness then
             MainShadowStroke.Thickness = Info.ShadowThickness
+            if MainGlowStroke then
+                MainGlowStroke.Thickness = Info.ShadowThickness * 2.25
+            end
         end
         if Info.ShadowTransparency then
             MainShadowStroke.Transparency = Info.ShadowTransparency
+            if MainGlowStroke then
+                MainGlowStroke.Transparency = math.clamp(Info.ShadowTransparency + 0.13, 0.82, 0.96)
+            end
         end
     end
 

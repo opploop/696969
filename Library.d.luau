@@ -1937,13 +1937,14 @@ export type Library = {
             ShadowColor: (Color3 | string)?,
             ShadowThickness: number?,
             ShadowTransparency: number?,
+            SoftShadow: boolean?,
             Rainbow: boolean?,
             RainbowTarget: RainbowBorderTarget?,
             RainbowSpeed: number?,
             RainbowSaturation: number?,
             RainbowValue: number?,
         }?
-    ) -> (UIStroke, UIStroke),
+    ) -> (UIStroke, UIStroke, UIStroke?),
     AddGradient: (
         self: Library,
         Frame: GuiObject,
