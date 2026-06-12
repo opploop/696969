@@ -640,6 +640,9 @@ local Templates = {
         ShadowColor = "DarkColor",
         ShadowThickness = 1.5,
         ShadowTransparency = 0,
+        OuterShadowColor = Color3.fromRGB(0, 0, 0),
+        OuterShadowThickness = 14,
+        OuterShadowTransparency = 0.72,
         RainbowBorder = false,
         RainbowBorderTargets = nil,
         RainbowBorderSpeed = 0.12,
@@ -3119,6 +3122,9 @@ function Library:AddOutline(Frame: GuiObject, Info)
     local ShadowThickness = Info.ShadowThickness or 1.5
     local ShadowTransparency = Info.ShadowTransparency or 0
     local ShadowColor = Info.ShadowColor or "DarkColor"
+    local OuterShadowColor = Info.OuterShadowColor or Color3.fromRGB(0, 0, 0)
+    local OuterShadowThickness = Info.OuterShadowThickness or math.max(ShadowThickness + 8, 14)
+    local OuterShadowTransparency = Info.OuterShadowTransparency or 0.72
     local ShadowStroke = New("UIStroke", {
         Color = ShadowColor,
         Thickness = ShadowThickness,
@@ -3128,21 +3134,16 @@ function Library:AddOutline(Frame: GuiObject, Info)
     })
     local GlowStrokes = {}
     if ShadowThickness >= 3 and ShadowTransparency < 1 and Info.SoftShadow ~= false then
-        for Index, Layer in {
-            { ThicknessOffset = 8, TransparencyOffset = 0.08 },
-            { ThicknessOffset = 16, TransparencyOffset = 0.14 },
-        } do
-            table.insert(
-                GlowStrokes,
-                New("UIStroke", {
-                    Color = ShadowColor,
-                    Thickness = ShadowThickness + Layer.ThicknessOffset,
-                    Transparency = math.clamp(ShadowTransparency + Layer.TransparencyOffset, Index == 1 and 0.88 or 0.94, 0.97),
-                    ZIndex = (Info.ShadowZIndex or 1) - Index,
-                    Parent = Frame,
-                })
-            )
-        end
+        table.insert(
+            GlowStrokes,
+            New("UIStroke", {
+                Color = OuterShadowColor,
+                Thickness = OuterShadowThickness,
+                Transparency = OuterShadowTransparency,
+                ZIndex = (Info.ShadowZIndex or 1) - 1,
+                Parent = Frame,
+            })
+        )
     end
 
     if Info.Rainbow == true or Info.RainbowTarget ~= nil then
@@ -12438,6 +12439,9 @@ function Library:CreateWindow(WindowInfo)
             ShadowColor = WindowInfo.ShadowColor,
             ShadowThickness = WindowInfo.ShadowThickness,
             ShadowTransparency = WindowInfo.ShadowTransparency,
+            OuterShadowColor = WindowInfo.OuterShadowColor,
+            OuterShadowThickness = WindowInfo.OuterShadowThickness,
+            OuterShadowTransparency = WindowInfo.OuterShadowTransparency,
             RainbowTarget = "Window",
         })
         if WindowInfo.Gradient then
@@ -12980,36 +12984,36 @@ function Library:CreateWindow(WindowInfo)
         end
         if Info.ShadowColor then
             MainShadowStroke.Color = GetSchemeValue(Info.ShadowColor) or Info.ShadowColor
-            for _, GlowStroke in MainGlowStrokes or {} do
-                GlowStroke.Color = MainShadowStroke.Color
-            end
             if typeof(Info.ShadowColor) == "string" then
                 if not Library.Registry[MainShadowStroke] then
                     Library:AddToRegistry(MainShadowStroke, {})
                 end
                 Library.Registry[MainShadowStroke].Color = Info.ShadowColor
-                for _, GlowStroke in MainGlowStrokes or {} do
-                    if not Library.Registry[GlowStroke] then
-                        Library:AddToRegistry(GlowStroke, {})
-                    end
-                    Library.Registry[GlowStroke].Color = Info.ShadowColor
-                end
             end
         end
         if Info.ShadowThickness then
             MainShadowStroke.Thickness = Info.ShadowThickness
-            for Index, GlowStroke in MainGlowStrokes or {} do
-                GlowStroke.Thickness = Info.ShadowThickness + (Index == 1 and 8 or 16)
+            for _, GlowStroke in MainGlowStrokes or {} do
+                GlowStroke.Thickness = math.max(Info.ShadowThickness + 8, 14)
             end
         end
         if Info.ShadowTransparency then
             MainShadowStroke.Transparency = Info.ShadowTransparency
-            for Index, GlowStroke in MainGlowStrokes or {} do
-                GlowStroke.Transparency = math.clamp(
-                    Info.ShadowTransparency + (Index == 1 and 0.08 or 0.14),
-                    Index == 1 and 0.88 or 0.94,
-                    0.97
-                )
+        end
+        if Info.OuterShadowColor then
+            local OuterShadowColor = GetSchemeValue(Info.OuterShadowColor) or Info.OuterShadowColor
+            for _, GlowStroke in MainGlowStrokes or {} do
+                GlowStroke.Color = OuterShadowColor
+            end
+        end
+        if Info.OuterShadowThickness then
+            for _, GlowStroke in MainGlowStrokes or {} do
+                GlowStroke.Thickness = Info.OuterShadowThickness
+            end
+        end
+        if Info.OuterShadowTransparency then
+            for _, GlowStroke in MainGlowStrokes or {} do
+                GlowStroke.Transparency = Info.OuterShadowTransparency
             end
         end
     end
