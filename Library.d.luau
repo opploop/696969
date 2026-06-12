@@ -2127,6 +2127,7 @@ export type Library = {
             Resizable: boolean?,
             DisableSearch: boolean?,
             SearchbarSize: UDim2?,
+            SearchPlaceholder: string?,
             GlobalSearch: boolean?,
             CornerRadius: number?,
             NotifySide: "Left" | "Right"?,

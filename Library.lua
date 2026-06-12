@@ -616,6 +616,7 @@ local Templates = {
         Center = true,
         Resizable = true,
         SearchbarSize = UDim2.fromScale(1, 1),
+        SearchPlaceholder = "Search",
         GlobalSearch = false,
         CornerRadius = 4,
         NotifySide = "Right",
@@ -12321,6 +12322,7 @@ function Library:CreateWindow(WindowInfo)
     local IsDefaultSearchbarSize = WindowInfo.SearchbarSize == UDim2.fromScale(1, 1)
     local MainFrame
     local DividerLine
+    local TopbarDividerLine
     local TitleHolder
     local WindowTitle
     local WindowIcon
@@ -12436,8 +12438,9 @@ function Library:CreateWindow(WindowInfo)
 
         DividerLine = New("Frame", {
             BackgroundColor3 = "OutlineColor",
-            Position = IsTopbarTabs and UDim2.fromOffset(0, 88) or UDim2.fromOffset(InitialLeftWidth, 0),
-            Size = IsTopbarTabs and UDim2.new(1, 0, 0, 1) or UDim2.new(0, 1, 1, -21),
+            Position = IsTopbarTabs and UDim2.fromOffset(0, 88) or UDim2.fromOffset(InitialLeftWidth, 48),
+            Size = IsTopbarTabs and UDim2.new(1, 0, 0, 1) or UDim2.new(0, 1, 1, -68),
+            ZIndex = 4,
             Parent = MainFrame,
         })
 
@@ -12508,6 +12511,15 @@ function Library:CreateWindow(WindowInfo)
         })
         RegisterBackgroundImageSurface(TopBarBottomCover, 0, "Content")
         Library:MakeDraggable(MainFrame, TopBar, false, true)
+
+        TopbarDividerLine = New("Frame", {
+            BackgroundColor3 = "OutlineColor",
+            Position = UDim2.fromOffset(InitialLeftWidth, 0),
+            Size = UDim2.new(0, 1, 1, 0),
+            Visible = not IsTopbarTabs,
+            ZIndex = 4,
+            Parent = TopBar,
+        })
 
         --// Title
         TitleHolder = New("Frame", {
@@ -12616,7 +12628,7 @@ function Library:CreateWindow(WindowInfo)
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
             CanvasSize = UDim2.fromScale(0, 0),
-            ScrollBarThickness = 2,
+            ScrollBarThickness = 0,
             ScrollingDirection = Enum.ScrollingDirection.Y,
             Size = UDim2.new(1, 0, 1, -20),
             Parent = CurrentTabInfo,
@@ -12634,9 +12646,11 @@ function Library:CreateWindow(WindowInfo)
         })
 
         SearchBox = New("TextBox", {
+            AutoLocalize = false,
             BackgroundColor3 = "MainColor",
-            PlaceholderText = "Search",
+            PlaceholderText = WindowInfo.SearchPlaceholder or "Search",
             Size = WindowInfo.SearchbarSize,
+            Text = "",
             TextScaled = true,
             Visible = not (WindowInfo.DisableSearch or false),
             Parent = RightWrapper,
@@ -13111,7 +13125,11 @@ function Library:CreateWindow(WindowInfo)
         Width = math.clamp(Width, 48, MainFrame.Size.X.Offset - WindowInfo.MinContainerWidth - 1)
         local TopbarLeftReserve = GetTopbarLeftReserve(Width)
 
-        DividerLine.Position = UDim2.fromOffset(Width, 0)
+        DividerLine.Position = UDim2.fromOffset(Width, 48)
+        DividerLine.Size = UDim2.new(0, 1, 1, -68)
+        if TopbarDividerLine then
+            TopbarDividerLine.Position = UDim2.fromOffset(Width, 0)
+        end
 
         TitleHolder.Size = UDim2.new(0, Width, 1, 0)
         RightWrapper.Position = UDim2.new(0, TopbarLeftReserve, 0.5, 0)
