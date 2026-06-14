@@ -1,44 +1,160 @@
 local cloneref = (cloneref or clonereference or function(instance: any)
     return instance
 end)
-local clonefunction = (clonefunction or copyfunction or function(func) 
-    return func 
-end)
 
 local HttpService: HttpService = cloneref(game:GetService("HttpService"))
-local isfolder, isfile, listfiles = isfolder, isfile, listfiles
 
-if typeof(clonefunction) == "function" then
-    -- Fix is_____ functions for shitsploits, those functions should never error, only return a boolean.
-
-    local
-        isfolder_copy,
-        isfile_copy,
-        listfiles_copy = clonefunction(isfolder), clonefunction(isfile), clonefunction(listfiles)
-
-    local isfolder_success, isfolder_error = pcall(function()
-        return isfolder_copy("test" .. tostring(math.random(1000000, 9999999)))
+local function GetCompat()
+    local ok, env = pcall(function()
+        if typeof(getgenv) == "function" then
+            return getgenv()
+        end
+        return _G
     end)
 
-    if isfolder_success == false or typeof(isfolder_error) ~= "boolean" then
-        isfolder = function(folder)
-            local success, data = pcall(isfolder_copy, folder)
-            return (if success then data else false)
-        end
-
-        isfile = function(file)
-            local success, data = pcall(isfile_copy, file)
-            return (if success then data else false)
-        end
-
-        listfiles = function(folder)
-            local success, data = pcall(listfiles_copy, folder)
-            return (if success then data else {})
-        end
+    if ok and typeof(env) == "table" then
+        return env.ObsidianCompat or env.MoonHubCompat
     end
+
+    return nil
 end
 
-local SaveManager = {} do
+local Compat = GetCompat()
+
+local function safeCall(fn, ...)
+    if typeof(fn) ~= "function" then
+        return false, "not a function"
+    end
+
+    local results = table.pack(pcall(fn, ...))
+    if not results[1] then
+        return false, tostring(results[2])
+    end
+
+    return true, table.unpack(results, 2, results.n)
+end
+
+local function fsIsFolder(path)
+    if Compat and typeof(Compat.isFolder) == "function" then
+        return Compat.isFolder(path)
+    end
+    if typeof(isfolder) ~= "function" then
+        return false, "isfolder unavailable"
+    end
+
+    local ok, result = safeCall(isfolder, path)
+    if not ok then
+        return false, result
+    end
+
+    return result == true
+end
+
+local function fsIsFile(path)
+    if Compat and typeof(Compat.isFile) == "function" then
+        return Compat.isFile(path)
+    end
+    if typeof(isfile) ~= "function" then
+        return false, "isfile unavailable"
+    end
+
+    local ok, result = safeCall(isfile, path)
+    if not ok then
+        return false, result
+    end
+
+    return result == true
+end
+
+local function fsMakeFolder(path)
+    if Compat and typeof(Compat.makeFolder) == "function" then
+        return Compat.makeFolder(path)
+    end
+    if typeof(makefolder) ~= "function" then
+        return false, "makefolder unavailable"
+    end
+
+    return safeCall(makefolder, path)
+end
+
+local function fsReadFile(path)
+    if Compat and typeof(Compat.readFile) == "function" then
+        return Compat.readFile(path)
+    end
+    if typeof(readfile) ~= "function" then
+        return false, "readfile unavailable"
+    end
+
+    return safeCall(readfile, path)
+end
+
+local function fsWriteFile(path, content)
+    if Compat and typeof(Compat.writeFile) == "function" then
+        return Compat.writeFile(path, content)
+    end
+    if typeof(writefile) ~= "function" then
+        return false, "writefile unavailable"
+    end
+
+    return safeCall(writefile, path, content)
+end
+
+local function fsListFiles(path)
+    if Compat and typeof(Compat.listFiles) == "function" then
+        return Compat.listFiles(path)
+    end
+    if typeof(listfiles) ~= "function" then
+        return false, "listfiles unavailable"
+    end
+
+    return safeCall(listfiles, path)
+end
+
+local function fsDeleteFile(path)
+    if Compat and typeof(Compat.deleteFile) == "function" then
+        return Compat.deleteFile(path)
+    end
+    if typeof(delfile) ~= "function" then
+        return false, "delfile unavailable"
+    end
+
+    return safeCall(delfile, path)
+end
+
+local function compatSpawn(fn, ...)
+    local args = table.pack(...)
+    if Compat and typeof(Compat.spawn) == "function" then
+        return Compat.spawn(function()
+            fn(table.unpack(args, 1, args.n))
+        end)
+    end
+    if typeof(task) == "table" and typeof(task.spawn) == "function" then
+        return true, task.spawn(fn, table.unpack(args, 1, args.n))
+    end
+    if typeof(spawn) == "function" then
+        return true, spawn(function()
+            fn(table.unpack(args, 1, args.n))
+        end)
+    end
+
+    return safeCall(fn, table.unpack(args, 1, args.n))
+end
+
+local function compatWait(seconds)
+    if Compat and typeof(Compat.wait) == "function" then
+        return Compat.wait(seconds)
+    end
+    if typeof(task) == "table" and typeof(task.wait) == "function" then
+        return task.wait(seconds)
+    elseif typeof(wait) == "function" then
+        return wait(seconds)
+    end
+
+    return 0
+end
+
+local SaveManager = {}
+do
     SaveManager.Folder = "ObsidianLibSettings"
     SaveManager.SubFolder = ""
     SaveManager.Ignore = {}
@@ -81,7 +197,12 @@ local SaveManager = {} do
         },
         ColorPicker = {
             Save = function(idx, object)
-                return { type = "ColorPicker", idx = idx, value = object.Value:ToHex(), transparency = object.Transparency }
+                return {
+                    type = "ColorPicker",
+                    idx = idx,
+                    value = object.Value:ToHex(),
+                    transparency = object.Transparency,
+                }
             end,
             Load = function(idx, data)
                 if SaveManager.Library.Options[idx] then
@@ -91,7 +212,13 @@ local SaveManager = {} do
         },
         KeyPicker = {
             Save = function(idx, object)
-                return { type = "KeyPicker", idx = idx, mode = object.Mode, key = object.Value, modifiers = object.Modifiers }
+                return {
+                    type = "KeyPicker",
+                    idx = idx,
+                    mode = object.Mode,
+                    key = object.Value,
+                    modifiers = object.Modifiers,
+                }
             end,
             Load = function(idx, data)
                 if SaveManager.Library.Options[idx] then
@@ -126,18 +253,31 @@ local SaveManager = {} do
 
     function SaveManager:IgnoreThemeSettings()
         self:SetIgnoreIndexes({
-            "BackgroundColor", "MainColor", "AccentColor", "OutlineColor", "FontColor", "FontFace", -- themes
-            "ThemeManager_ThemeList", "ThemeManager_CustomThemeList", "ThemeManager_CustomThemeName", -- themes
+            "BackgroundColor",
+            "MainColor",
+            "AccentColor",
+            "OutlineColor",
+            "FontColor",
+            "FontFace", -- themes
+            "ThemeManager_ThemeList",
+            "ThemeManager_CustomThemeList",
+            "ThemeManager_CustomThemeName", -- themes
         })
     end
 
     --// Folders \\--
     function SaveManager:CheckSubFolder(createFolder)
-        if typeof(self.SubFolder) ~= "string" or self.SubFolder == "" then return false end
+        if typeof(self.SubFolder) ~= "string" or self.SubFolder == "" then
+            return false
+        end
 
         if createFolder == true then
-            if not isfolder(self.Folder .. "/settings/" .. self.SubFolder) then
-                makefolder(self.Folder .. "/settings/" .. self.SubFolder)
+            local path = self.Folder .. "/settings/" .. self.SubFolder
+            if not fsIsFolder(path) then
+                local success = fsMakeFolder(path)
+                if not success then
+                    return false
+                end
             end
         end
 
@@ -150,7 +290,9 @@ local SaveManager = {} do
         local parts = self.Folder:split("/")
         for idx = 1, #parts do
             local path = table.concat(parts, "/", 1, idx)
-            if not table.find(paths, path) then paths[#paths + 1] = path end
+            if not table.find(paths, path) then
+                paths[#paths + 1] = path
+            end
         end
 
         paths[#paths + 1] = self.Folder .. "/themes"
@@ -162,7 +304,9 @@ local SaveManager = {} do
 
             for idx = 1, #parts do
                 local path = table.concat(parts, "/", 1, idx)
-                if not table.find(paths, path) then paths[#paths + 1] = path end
+                if not table.find(paths, path) then
+                    paths[#paths + 1] = path
+                end
             end
         end
 
@@ -174,17 +318,32 @@ local SaveManager = {} do
 
         for i = 1, #paths do
             local str = paths[i]
-            if isfolder(str) then continue end
+            local exists, existsError = fsIsFolder(str)
+            if exists then
+                continue
+            end
 
-            makefolder(str)
+            local success, errorMessage = fsMakeFolder(str)
+            if not success then
+                return false, existsError or errorMessage or "failed to create folder"
+            end
         end
+
+        return true
     end
 
     function SaveManager:CheckFolderTree()
-        if isfolder(self.Folder) then return end
-        SaveManager:BuildFolderTree()
+        if fsIsFolder(self.Folder) then
+            return true
+        end
 
-        task.wait(0.1)
+        local success, errorMessage = SaveManager:BuildFolderTree()
+        if not success then
+            return false, errorMessage
+        end
+
+        compatWait(0.1)
+        return true
     end
 
     function SaveManager:SetIgnoreIndexes(list)
@@ -195,20 +354,23 @@ local SaveManager = {} do
 
     function SaveManager:SetFolder(folder)
         self.Folder = folder
-        self:BuildFolderTree()
+        return self:BuildFolderTree()
     end
 
     function SaveManager:SetSubFolder(folder)
         self.SubFolder = folder
-        self:BuildFolderTree()
+        return self:BuildFolderTree()
     end
 
     --// Save, Load, Delete, Refresh \\--
     function SaveManager:Save(name)
-        if (not name) then
+        if not name then
             return false, "no config file is selected"
         end
-        SaveManager:CheckFolderTree()
+        local treeSuccess, treeError = SaveManager:CheckFolderTree()
+        if not treeSuccess then
+            return false, "filesystem unavailable: " .. tostring(treeError)
+        end
 
         local fullPath = self.Folder .. "/settings/" .. name .. ".json"
         if SaveManager:CheckSubFolder(true) then
@@ -216,21 +378,33 @@ local SaveManager = {} do
         end
 
         local data = {
-            objects = {}
+            objects = {},
         }
 
         for idx, toggle in pairs(self.Library.Toggles) do
-            if not toggle.Type then continue end
-            if not self.Parser[toggle.Type] then continue end
-            if self.Ignore[idx] then continue end
+            if not toggle.Type then
+                continue
+            end
+            if not self.Parser[toggle.Type] then
+                continue
+            end
+            if self.Ignore[idx] then
+                continue
+            end
 
             table.insert(data.objects, self.Parser[toggle.Type].Save(idx, toggle))
         end
 
         for idx, option in pairs(self.Library.Options) do
-            if not option.Type then continue end
-            if not self.Parser[option.Type] then continue end
-            if self.Ignore[idx] then continue end
+            if not option.Type then
+                continue
+            end
+            if not self.Parser[option.Type] then
+                continue
+            end
+            if self.Ignore[idx] then
+                continue
+            end
 
             table.insert(data.objects, self.Parser[option.Type].Save(idx, option))
         end
@@ -240,25 +414,42 @@ local SaveManager = {} do
             return false, "failed to encode data"
         end
 
-        writefile(fullPath, encoded)
+        local writeSuccess, writeError = fsWriteFile(fullPath, encoded)
+        if not writeSuccess then
+            return false, "write file error: " .. tostring(writeError)
+        end
+
         return true
     end
 
     function SaveManager:Load(name)
-        if (not name) then
+        if not name then
             return false, "no config file is selected"
         end
-        SaveManager:CheckFolderTree()
+        local treeSuccess, treeError = SaveManager:CheckFolderTree()
+        if not treeSuccess then
+            return false, "filesystem unavailable: " .. tostring(treeError)
+        end
 
         local file = self.Folder .. "/settings/" .. name .. ".json"
         if SaveManager:CheckSubFolder(true) then
             file = self.Folder .. "/settings/" .. self.SubFolder .. "/" .. name .. ".json"
         end
 
-        if not isfile(file) then return false, "invalid file" end
+        local fileExists, fileError = fsIsFile(file)
+        if not fileExists then
+            return false, fileError or "invalid file"
+        end
 
-        local success, decoded = pcall(HttpService.JSONDecode, HttpService, readfile(file))
-        if not success then return false, "decode error" end
+        local readSuccess, fileData = fsReadFile(file)
+        if not readSuccess then
+            return false, "read file error: " .. tostring(fileData)
+        end
+
+        local success, decoded = pcall(HttpService.JSONDecode, HttpService, fileData)
+        if not success then
+            return false, "decode error"
+        end
 
         if self.UseLoadingOrder == true and typeof(self.LoadingOrder) == "table" then
             table.sort(decoded.objects, function(a, b)
@@ -269,18 +460,24 @@ local SaveManager = {} do
         end
 
         for _, option in decoded.objects do
-            if not option.type then continue end
-            if not self.Parser[option.type] then continue end
-            if self.Ignore[option.idx] then continue end
+            if not option.type then
+                continue
+            end
+            if not self.Parser[option.type] then
+                continue
+            end
+            if self.Ignore[option.idx] then
+                continue
+            end
 
-            task.spawn(self.Parser[option.type].Load, option.idx, option) -- task.spawn() so the config loading wont get stuck.
+            compatSpawn(self.Parser[option.type].Load, option.idx, option) -- async so the config loading wont get stuck.
         end
 
         return true
     end
 
     function SaveManager:Delete(name)
-        if (not name) then
+        if not name then
             return false, "no config file is selected"
         end
 
@@ -289,10 +486,15 @@ local SaveManager = {} do
             file = self.Folder .. "/settings/" .. self.SubFolder .. "/" .. name .. ".json"
         end
 
-        if not isfile(file) then return false, "invalid file" end
+        local fileExists, fileError = fsIsFile(file)
+        if not fileExists then
+            return false, fileError or "invalid file"
+        end
 
-        local success = pcall(delfile, file)
-        if not success then return false, "delete file error" end
+        local success, deleteError = fsDeleteFile(file)
+        if not success then
+            return false, "delete file error: " .. tostring(deleteError)
+        end
 
         return true
     end
@@ -305,11 +507,21 @@ local SaveManager = {} do
             local out = {}
 
             if SaveManager:CheckSubFolder(true) then
-                list = listfiles(self.Folder .. "/settings/" .. self.SubFolder)
+                local listSuccess
+                listSuccess, list = fsListFiles(self.Folder .. "/settings/" .. self.SubFolder)
+                if not listSuccess then
+                    error(list)
+                end
             else
-                list = listfiles(self.Folder .. "/settings")
+                local listSuccess
+                listSuccess, list = fsListFiles(self.Folder .. "/settings")
+                if not listSuccess then
+                    error(list)
+                end
             end
-            if typeof(list) ~= "table" then list = {} end
+            if typeof(list) ~= "table" then
+                list = {}
+            end
 
             for i = 1, #list do
                 local file = list[i]
@@ -334,7 +546,7 @@ local SaveManager = {} do
             return out
         end)
 
-        if (not success) then
+        if not success then
             if self.Library then
                 self.Library:Notify("Failed to load config list: " .. tostring(data))
             else
@@ -349,15 +561,18 @@ local SaveManager = {} do
 
     --// Auto Load \\--
     function SaveManager:GetAutoloadConfig()
-        SaveManager:CheckFolderTree()
+        local treeSuccess = SaveManager:CheckFolderTree()
+        if not treeSuccess then
+            return "none"
+        end
 
         local autoLoadPath = self.Folder .. "/settings/autoload.txt"
         if SaveManager:CheckSubFolder(true) then
             autoLoadPath = self.Folder .. "/settings/" .. self.SubFolder .. "/autoload.txt"
         end
 
-        if isfile(autoLoadPath) then
-            local successRead, name = pcall(readfile, autoLoadPath)
+        if fsIsFile(autoLoadPath) then
+            local successRead, name = fsReadFile(autoLoadPath)
             if not successRead then
                 return "none"
             end
@@ -370,54 +585,76 @@ local SaveManager = {} do
     end
 
     function SaveManager:LoadAutoloadConfig()
-        SaveManager:CheckFolderTree()
+        local treeSuccess, treeError = SaveManager:CheckFolderTree()
+        if not treeSuccess then
+            if self.Library then
+                self.Library:Notify("Failed to load autoload config: " .. tostring(treeError))
+            end
+            return
+        end
 
         local autoLoadPath = self.Folder .. "/settings/autoload.txt"
         if SaveManager:CheckSubFolder(true) then
             autoLoadPath = self.Folder .. "/settings/" .. self.SubFolder .. "/autoload.txt"
         end
 
-        if isfile(autoLoadPath) then
-            local successRead, name = pcall(readfile, autoLoadPath)
+        if fsIsFile(autoLoadPath) then
+            local successRead, name = fsReadFile(autoLoadPath)
             if not successRead then
-                self.Library:Notify("Failed to load autoload config: write file error")
+                if self.Library then
+                    self.Library:Notify("Failed to load autoload config: read file error")
+                end
                 return
             end
 
             local success, err = self:Load(name)
             if not success then
-                self.Library:Notify("Failed to load autoload config: " .. err)
+                if self.Library then
+                    self.Library:Notify("Failed to load autoload config: " .. err)
+                end
                 return
             end
 
-            self.Library:Notify(string.format("Auto loaded config %q", name))
+            if self.Library then
+                self.Library:Notify(string.format("Auto loaded config %q", name))
+            end
         end
     end
 
     function SaveManager:SaveAutoloadConfig(name)
-        SaveManager:CheckFolderTree()
+        local treeSuccess, treeError = SaveManager:CheckFolderTree()
+        if not treeSuccess then
+            return false, "filesystem unavailable: " .. tostring(treeError)
+        end
 
         local autoLoadPath = self.Folder .. "/settings/autoload.txt"
         if SaveManager:CheckSubFolder(true) then
             autoLoadPath = self.Folder .. "/settings/" .. self.SubFolder .. "/autoload.txt"
         end
 
-        local success = pcall(writefile, autoLoadPath, name)
-        if not success then return false, "write file error" end
+        local success, writeError = fsWriteFile(autoLoadPath, name)
+        if not success then
+            return false, "write file error: " .. tostring(writeError)
+        end
 
         return true, ""
     end
 
     function SaveManager:DeleteAutoLoadConfig()
-        SaveManager:CheckFolderTree()
+        local treeSuccess, treeError = SaveManager:CheckFolderTree()
+        if not treeSuccess then
+            return false, "filesystem unavailable: " .. tostring(treeError)
+        end
 
         local autoLoadPath = self.Folder .. "/settings/autoload.txt"
         if SaveManager:CheckSubFolder(true) then
             autoLoadPath = self.Folder .. "/settings/" .. self.SubFolder .. "/autoload.txt"
         end
 
-        local success = pcall(delfile, autoLoadPath)
-        if not success then return false, "delete file error" end
+        local success, deleteError = fsDeleteFile(autoLoadPath)
+        if not success then
+            return false, "delete file error: " .. tostring(deleteError)
+        end
 
         return true, ""
     end
@@ -428,7 +665,7 @@ local SaveManager = {} do
 
         local section = tab:AddRightGroupbox("Configuration", "folder-cog")
 
-        section:AddInput("SaveManager_ConfigName",    { Text = "Config name" })
+        section:AddInput("SaveManager_ConfigName", { Text = "Config name" })
         section:AddButton("Create config", function()
             local name = self.Library.Options.SaveManager_ConfigName.Value
 
@@ -450,7 +687,10 @@ local SaveManager = {} do
 
         section:AddDivider()
 
-        section:AddDropdown("SaveManager_ConfigList", { Text = "Config list", Values = self:RefreshConfigList(), AllowNull = true })
+        section:AddDropdown(
+            "SaveManager_ConfigList",
+            { Text = "Config list", Values = self:RefreshConfigList(), AllowNull = true }
+        )
         section:AddButton("Load config", function()
             local name = self.Library.Options.SaveManager_ConfigList.Value
 

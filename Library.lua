@@ -11,6 +11,7 @@ local ContextActionService = cloneref(game:GetService("ContextActionService"))
 local TextService: TextService = cloneref(game:GetService("TextService"))
 local Teams: Teams = cloneref(game:GetService("Teams"))
 local TweenService: TweenService = cloneref(game:GetService("TweenService"))
+local HttpService: HttpService = cloneref(game:GetService("HttpService"))
 
 local getgenv = getgenv or function()
     return shared
@@ -19,6 +20,172 @@ local setclipboard = setclipboard or nil
 local protectgui = protectgui or (syn and syn.protect_gui) or function() end
 local gethui = gethui or function()
     return CoreGui
+end
+
+local function GetCompat()
+    local ok, env = pcall(getgenv)
+    if ok and typeof(env) == "table" then
+        return env.ObsidianCompat or env.MoonHubCompat
+    end
+
+    return nil
+end
+
+local Compat = GetCompat()
+
+local function CompatGetGlobalEnv()
+    if Compat and typeof(Compat.getGlobalEnv) == "function" then
+        return Compat.getGlobalEnv()
+    end
+
+    local ok, env = pcall(getgenv)
+    if ok and typeof(env) == "table" then
+        return env
+    end
+
+    return _G
+end
+
+local function CompatHttpGet(Url)
+    if Compat and typeof(Compat.httpGet) == "function" then
+        return Compat.httpGet(Url)
+    end
+
+    local Success, Body = pcall(function()
+        return game:HttpGet(Url)
+    end)
+
+    if not Success then
+        return false, Body
+    end
+
+    return true, Body
+end
+
+local function CompatIsFolder(Path)
+    if Compat and typeof(Compat.isFolder) == "function" then
+        return Compat.isFolder(Path)
+    end
+    if typeof(isfolder) ~= "function" then
+        return false, "isfolder unavailable"
+    end
+
+    local Success, Result = pcall(isfolder, Path)
+    if not Success then
+        return false, Result
+    end
+
+    return Result == true
+end
+
+local function CompatIsFile(Path)
+    if Compat and typeof(Compat.isFile) == "function" then
+        return Compat.isFile(Path)
+    end
+    if typeof(isfile) ~= "function" then
+        return false, "isfile unavailable"
+    end
+
+    local Success, Result = pcall(isfile, Path)
+    if not Success then
+        return false, Result
+    end
+
+    return Result == true
+end
+
+local function CompatMakeFolder(Path)
+    if Compat and typeof(Compat.makeFolder) == "function" then
+        return Compat.makeFolder(Path)
+    end
+    if typeof(makefolder) ~= "function" then
+        return false, "makefolder unavailable"
+    end
+
+    local Success, ErrorMessage = pcall(makefolder, Path)
+    return Success, ErrorMessage
+end
+
+local function CompatWriteFile(Path, Content)
+    if Compat and typeof(Compat.writeFile) == "function" then
+        return Compat.writeFile(Path, Content)
+    end
+    if typeof(writefile) ~= "function" then
+        return false, "writefile unavailable"
+    end
+
+    local Success, ErrorMessage = pcall(writefile, Path, Content)
+    return Success, ErrorMessage
+end
+
+local function CompatGetCustomAsset(Path)
+    if Compat and typeof(Compat.getCustomAsset) == "function" then
+        return Compat.getCustomAsset(Path)
+    end
+
+    local Fn = if typeof(getcustomasset) == "function"
+        then getcustomasset
+        elseif typeof(getsynasset) == "function" then getsynasset
+        else nil
+
+    if not Fn then
+        return false, "custom asset unavailable"
+    end
+
+    local Success, Asset = pcall(Fn, Path)
+    if not Success then
+        return false, Asset
+    end
+
+    return true, Asset
+end
+
+local function CompatCanUseFileAssets()
+    if Compat and typeof(Compat.getSupportReport) == "function" then
+        local Success, Report = pcall(Compat.getSupportReport)
+        if Success and typeof(Report) == "table" then
+            local Filesystem = Report.filesystem
+            local Functions = typeof(Filesystem) == "table" and Filesystem.functions or nil
+            local HasFilesystem = typeof(Functions) == "table"
+                and Functions.writefile == true
+                and Functions.isfile == true
+                and Functions.isfolder == true
+                and Functions.makefolder == true
+
+            if HasFilesystem and Report.customAsset == "complete" then
+                return true
+            end
+        end
+    end
+
+    return typeof(writefile) == "function"
+        and typeof(isfile) == "function"
+        and typeof(isfolder) == "function"
+        and typeof(makefolder) == "function"
+        and (typeof(getcustomasset) == "function" or typeof(getsynasset) == "function")
+end
+
+local function CompatSetClipboard(Text)
+    if Compat and typeof(Compat.setClipboard) == "function" then
+        return Compat.setClipboard(Text)
+    end
+    if typeof(setclipboard) ~= "function" then
+        return false, "clipboard unavailable"
+    end
+
+    local Success, ErrorMessage = pcall(setclipboard, tostring(Text))
+    return Success, ErrorMessage
+end
+
+local function CompatGetUiParent()
+    if Compat and typeof(Compat.getUiParent) == "function" then
+        local Success, Parent = Compat.getUiParent()
+        if Success and Parent then
+            return Parent
+        end
+    end
+
+    return gethui()
 end
 
 local LocalPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
@@ -251,10 +418,6 @@ local CustomImageManagerAssets = {
 }
 do
     local function RecursiveCreatePath(Path: string, IsFile: boolean?)
-        if not isfolder or not makefolder then
-            return
-        end
-
         local Segments = Path:split("/")
         local TraversedPath = ""
 
@@ -263,8 +426,11 @@ do
         end
 
         for _, Segment in ipairs(Segments) do
-            if not isfolder(TraversedPath .. Segment) then
-                makefolder(TraversedPath .. Segment)
+            if not CompatIsFolder(TraversedPath .. Segment) then
+                local Success = CompatMakeFolder(TraversedPath .. Segment)
+                if not Success then
+                    return
+                end
             end
 
             TraversedPath = TraversedPath .. Segment .. "/"
@@ -308,9 +474,8 @@ do
 
         local AssetID = string.format("rbxassetid://%s", AssetData.RobloxId)
 
-        if getcustomasset then
-            local Success, NewID = pcall(getcustomasset, AssetData.Path)
-
+        do
+            local Success, NewID = CompatGetCustomAsset(AssetData.Path)
             if Success and NewID then
                 AssetID = NewID
             end
@@ -321,23 +486,20 @@ do
     end
 
     function CustomImageManager.DownloadAsset(AssetName: string, ForceRedownload: boolean?)
-        if not getcustomasset or not writefile or not isfile then
-            return false, "missing functions"
-        end
-
         local AssetData = CustomImageManagerAssets[AssetName]
 
         RecursiveCreatePath(AssetData.Path, true)
 
-        if ForceRedownload ~= true and isfile(AssetData.Path) then
+        if ForceRedownload ~= true and CompatIsFile(AssetData.Path) then
             return true, nil
         end
 
-        local success, errorMessage = pcall(function()
-            writefile(AssetData.Path, game:HttpGet(AssetData.URL))
-        end)
+        local success, body = CompatHttpGet(AssetData.URL)
+        if not success then
+            return false, body
+        end
 
-        return success, errorMessage
+        return CompatWriteFile(AssetData.Path, body)
     end
 
     for AssetName, _ in CustomImageManagerAssets do
@@ -356,15 +518,14 @@ local function SanitizeAssetPathSegment(Value: string): string
 end
 
 local function EnsureDownloadFolder(Path: string)
-    if not isfolder or not makefolder then
-        return
-    end
-
     local Current = ""
     for Segment in Path:gmatch("[^/]+") do
         Current ..= Segment
-        if not isfolder(Current) then
-            makefolder(Current)
+        if not CompatIsFolder(Current) then
+            local Success = CompatMakeFolder(Current)
+            if not Success then
+                return
+            end
         end
         Current ..= "/"
     end
@@ -392,10 +553,6 @@ local function DownloadUrlToCustomAsset(Url: string, Info)
         return Url, true
     end
 
-    if not (writefile and isfile and getcustomasset) then
-        return Url, false, "missing writefile/isfile/getcustomasset"
-    end
-
     Info = typeof(Info) == "table" and Info or {}
     local Folder = Info.Folder or "Obsidian/downloads"
     local FileName = GetUrlFileName(Url, Info.FileName or Info.Name, Info.Extension)
@@ -403,16 +560,19 @@ local function DownloadUrlToCustomAsset(Url: string, Info)
 
     EnsureDownloadFolder(Folder)
 
-    if Info.ForceRedownload == true or not isfile(Path) then
-        local Success, ErrorMessage = pcall(function()
-            writefile(Path, game:HttpGet(Url))
-        end)
+    if Info.ForceRedownload == true or not CompatIsFile(Path) then
+        local Success, Body = CompatHttpGet(Url)
         if not Success then
-            return Url, false, ErrorMessage
+            return Url, false, Body
+        end
+
+        local WriteSuccess, WriteError = CompatWriteFile(Path, Body)
+        if not WriteSuccess then
+            return Url, false, WriteError
         end
     end
 
-    local Success, CustomAsset = pcall(getcustomasset, Path)
+    local Success, CustomAsset = CompatGetCustomAsset(Path)
     if not Success or not CustomAsset then
         return Url, false, CustomAsset
     end
@@ -1074,8 +1234,7 @@ local function UpdateBackgroundImageSurfaces()
             continue
         end
 
-        Instance.BackgroundTransparency =
-            GetBackgroundImageSurfaceTransparency(Info.DefaultTransparency, Info.Layer)
+        Instance.BackgroundTransparency = GetBackgroundImageSurfaceTransparency(Info.DefaultTransparency, Info.Layer)
     end
 end
 
@@ -1612,8 +1771,13 @@ type IconModule = {
 }
 
 local FetchIcons, Icons = pcall(function()
+    local Success, Source = CompatHttpGet("https://raw.githubusercontent.com/deividcomsono/lucide-roblox-direct/refs/heads/main/source.lua")
+    if not Success then
+        error(Source)
+    end
+
     return (loadstring(
-        game:HttpGet("https://raw.githubusercontent.com/deividcomsono/lucide-roblox-direct/refs/heads/main/source.lua")
+        Source
     ) :: () -> IconModule)()
 end)
 
@@ -1669,7 +1833,7 @@ function Library:DownloadImage(Url: string, Info)
     if not IsHttpUrl(Url) then
         return Url
     end
-    if not (getcustomasset and writefile and isfile) then
+    if not CompatCanUseFileAssets() then
         return Url
     end
 
@@ -1677,7 +1841,8 @@ function Library:DownloadImage(Url: string, Info)
     local FileName = GetUrlFileName(Url, Info.FileName or Info.Name, Info.Extension)
     local AssetName = SanitizeAssetPathSegment(Info.AssetName or ("RemoteImage_" .. HashString(Url) .. "_" .. FileName))
 
-    local AddSuccess, AddError = pcall(CustomImageManager.AddAsset, AssetName, Info.RobloxAssetId or 0, Url, Info.ForceRedownload)
+    local AddSuccess, AddError =
+        pcall(CustomImageManager.AddAsset, AssetName, Info.RobloxAssetId or 0, Url, Info.ForceRedownload)
     if not AddSuccess then
         if tostring(AddError):find("already exists", 1, true) then
             if Info.ForceRedownload == true then
@@ -1721,15 +1886,14 @@ local function ResolveFontAssetUrl(BaseUrl: string?, AssetUrl: string): string
 end
 
 local function EnsureFontFolder(Path: string)
-    if not isfolder or not makefolder then
-        return
-    end
-
     local Current = ""
     for Segment in Path:gmatch("[^/]+") do
         Current ..= Segment
-        if not isfolder(Current) then
-            makefolder(Current)
+        if not CompatIsFolder(Current) then
+            local Success = CompatMakeFolder(Current)
+            if not Success then
+                return
+            end
         end
         Current ..= "/"
     end
@@ -1740,19 +1904,23 @@ local function DownloadFontAsset(AssetUrl: string, FontName: string, FileName: s
         return AssetUrl
     end
 
-    if not (writefile and isfile and getcustomasset) then
-        return AssetUrl
-    end
-
     local Folder = string.format("Obsidian/custom_fonts/%s", FontName:gsub("[^%w_%-]", "_"))
     EnsureFontFolder(Folder)
 
     local Path = string.format("%s/%s", Folder, FileName:gsub("[^%w_%-%.]", "_"))
-    if not isfile(Path) then
-        writefile(Path, game:HttpGet(AssetUrl))
+    if not CompatIsFile(Path) then
+        local DownloadSuccess, Body = CompatHttpGet(AssetUrl)
+        if not DownloadSuccess then
+            return AssetUrl
+        end
+
+        local WriteSuccess = CompatWriteFile(Path, Body)
+        if not WriteSuccess then
+            return AssetUrl
+        end
     end
 
-    local Success, CustomAsset = pcall(getcustomasset, Path)
+    local Success, CustomAsset = CompatGetCustomAsset(Path)
     return Success and CustomAsset or AssetUrl
 end
 
@@ -1997,9 +2165,7 @@ local function FetchFontManifest(Url: string)
 
     local LastError = "no response"
     for _, CandidateUrl in ipairs(Candidates) do
-        local FetchSuccess, Body = pcall(function()
-            return game:HttpGet(CandidateUrl)
-        end)
+        local FetchSuccess, Body = CompatHttpGet(CandidateUrl)
 
         if FetchSuccess and typeof(Body) == "string" then
             local DecodeSuccess, Decoded = DecodeFontJson(Body)
@@ -2008,7 +2174,11 @@ local function FetchFontManifest(Url: string)
                 return Decoded, CandidateUrl
             end
 
-            LastError = string.format("decode failed at %s; response starts with: %s", CandidateUrl, GetFontResponsePreview(Body))
+            LastError = string.format(
+                "decode failed at %s; response starts with: %s",
+                CandidateUrl,
+                GetFontResponsePreview(Body)
+            )
         else
             LastError = string.format("request failed at %s; %s", CandidateUrl, tostring(Body))
         end
@@ -2135,7 +2305,10 @@ function CustomFontManager:Download(Url: string, Options)
     assert(typeof(Url) == "string", "Font:Download expects a URL string.")
 
     local Decoded, SourceUrl, ErrorMessage = FetchFontManifest(Url)
-    assert(typeof(Decoded) == "table", "Font:Download expects a bitmap font JSON manifest URL. " .. tostring(ErrorMessage))
+    assert(
+        typeof(Decoded) == "table",
+        "Font:Download expects a bitmap font JSON manifest URL. " .. tostring(ErrorMessage)
+    )
 
     if typeof(Options) == "table" then
         for Key, Value in Options do
@@ -2166,7 +2339,10 @@ function Library:RegisterCustomFont(FontInfo)
 end
 
 function Library:SetCustomFont(FontData)
-    assert(typeof(FontData) == "table" and FontData.Type == "CustomFont", "SetCustomFont expects Font:Download/Register data.")
+    assert(
+        typeof(FontData) == "table" and FontData.Type == "CustomFont",
+        "SetCustomFont expects Font:Download/Register data."
+    )
 
     Library.CustomFont = FontData
     return FontData
@@ -2600,7 +2776,7 @@ local function ParentUI(UI: Instance, SkipHiddenUI: boolean?)
     end
 
     pcall(protectgui, UI)
-    SafeParentUI(UI, gethui)
+    SafeParentUI(UI, CompatGetUiParent)
 end
 
 local ScreenGui = New("ScreenGui", {
@@ -3051,7 +3227,9 @@ function Library:EnsureRainbowConnection()
             HasStroke = true
             local Enabled = IsRainbowStrokeEnabled(Data)
             if Enabled then
-                Data.Hue = (Data.Hue + (Data.Speed or Library.RainbowBorderSpeed) * math.clamp(DeltaTime or 0, 0, 1 / 15)) % 1
+                Data.Hue = (
+                    Data.Hue + (Data.Speed or Library.RainbowBorderSpeed) * math.clamp(DeltaTime or 0, 0, 1 / 15)
+                ) % 1
                 Stroke.Color = Color3.fromHSV(
                     Data.Hue,
                     Data.Saturation or Library.RainbowBorderSaturation,
@@ -3307,10 +3485,15 @@ function Library:SetupPlatformButtons(WindowInfo, Platform: "Mobile" | "Desktop"
 
     if IsMobilePlatform and tostring(WindowInfo.MobileButtonsMode):lower() == "topbarplus" then
         local Success, Topbar = pcall(function()
+            local FetchSuccess, Source = CompatHttpGet(
+                "https://raw.githubusercontent.com/tanhoangviet/ToolForLua/refs/heads/main/TopbarPlus_Extended.lua"
+            )
+            if not FetchSuccess then
+                error(Source)
+            end
+
             return loadstring(
-                game:HttpGet(
-                    "https://raw.githubusercontent.com/tanhoangviet/ToolForLua/refs/heads/main/TopbarPlus_Extended.lua"
-                )
+                Source
             )()
         end)
         if Success and Topbar and Topbar.Icon then
@@ -3474,7 +3657,9 @@ function Library:AddDraggableMenu(Name: string, Info)
     end
 
     if UseHeightConstraint then
-        Library:GiveSignal(ContainerList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(RefreshConstrainedHeight))
+        Library:GiveSignal(
+            ContainerList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(RefreshConstrainedHeight)
+        )
         task.defer(RefreshConstrainedHeight)
     end
 
@@ -3530,7 +3715,10 @@ function Library:AddKeybindMenuButton(Info)
         Visible = Button.Visible,
         Parent = Library.KeybindContainer,
     })
-    table.insert(Library.Corners, New("UICorner", { CornerRadius = UDim.new(0, Library.CornerRadius), Parent = Holder }))
+    table.insert(
+        Library.Corners,
+        New("UICorner", { CornerRadius = UDim.new(0, Library.CornerRadius), Parent = Holder })
+    )
     Library:AddOutline(Holder, {
         Color = Info.StrokeColor or "AccentColor",
         Transparency = Info.StrokeTransparency or 0.55,
@@ -3650,10 +3838,12 @@ function Library:AddKeybindMenuToggle(Idx, Info)
     })
 
     function Toggle:Display()
-        TweenService:Create(Track, Library.TweenInfo, {
-            BackgroundColor3 = Toggle.Value and Library.Scheme.AccentColor or Library.Scheme.OutlineColor,
-            BackgroundTransparency = Toggle.Value and 0.04 or 0.22,
-        }):Play()
+        TweenService
+            :Create(Track, Library.TweenInfo, {
+                BackgroundColor3 = Toggle.Value and Library.Scheme.AccentColor or Library.Scheme.OutlineColor,
+                BackgroundTransparency = Toggle.Value and 0.04 or 0.22,
+            })
+            :Play()
         TweenService:Create(Knob, Library.TweenInfo, {
             Position = Toggle.Value and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 4, 0.5, 0),
         }):Play()
@@ -3910,7 +4100,10 @@ function Library:ConnectSecondaryAction(Holder: GuiObject, Callback: () -> ())
         local Active = true
         local Changed
         Changed = Input.Changed:Connect(function()
-            if Input.UserInputState == Enum.UserInputState.End or Input.UserInputState == Enum.UserInputState.Cancel then
+            if
+                Input.UserInputState == Enum.UserInputState.End
+                or Input.UserInputState == Enum.UserInputState.Cancel
+            then
                 Active = false
                 if Changed and Changed.Connected then
                     Changed:Disconnect()
@@ -4143,7 +4336,10 @@ function Library:Unload()
         FloatingSpritesGui:Destroy()
     end
 
-    getgenv().Library = nil
+    local Env = CompatGetGlobalEnv()
+    if typeof(Env) == "table" then
+        Env.Library = nil
+    end
 end
 
 local CheckIcon = Library:GetIcon("check")
@@ -4498,13 +4694,17 @@ do
             })
 
             function KeybindsToggle:Display(State)
-                TweenService:Create(Track, Library.TweenInfo, {
-                    BackgroundColor3 = State and Library.Scheme.AccentColor or Library.Scheme.MainColor,
-                    BackgroundTransparency = State and 0.04 or 0.2,
-                }):Play()
-                TweenService:Create(Knob, Library.TweenInfo, {
-                    Position = State and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 4, 0.5, 0),
-                }):Play()
+                TweenService
+                    :Create(Track, Library.TweenInfo, {
+                        BackgroundColor3 = State and Library.Scheme.AccentColor or Library.Scheme.MainColor,
+                        BackgroundTransparency = State and 0.04 or 0.2,
+                    })
+                    :Play()
+                TweenService
+                    :Create(Knob, Library.TweenInfo, {
+                        Position = State and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 4, 0.5, 0),
+                    })
+                    :Play()
                 KnobGlow.Transparency = State and 0.25 or 0.75
                 Label.TextTransparency = State and 0 or 0.5
             end
@@ -5255,13 +5455,13 @@ do
                 ColorPicker:SetValueRGB(Library.CopiedColor[1], Library.CopiedColor[2])
             end)
 
-            if setclipboard then
+            if typeof(setclipboard) == "function" or (Compat and typeof(Compat.setClipboard) == "function") then
                 CreateButton("Copy Hex", function()
-                    setclipboard(tostring(ColorPicker.Value:ToHex()))
+                    CompatSetClipboard(tostring(ColorPicker.Value:ToHex()))
                 end)
 
                 CreateButton("Copy RGB", function()
-                    setclipboard(table.concat({
+                    CompatSetClipboard(table.concat({
                         math.floor(ColorPicker.Value.R * 255),
                         math.floor(ColorPicker.Value.G * 255),
                         math.floor(ColorPicker.Value.B * 255),
@@ -5477,7 +5677,8 @@ do
             local Gap = Width > 0 and 8 or 0
 
             AddonHolder.Size = UDim2.fromOffset(Width, Height)
-            TextLabel.Size = UDim2.new(BaseSize.X.Scale, BaseSize.X.Offset - Width - Gap, BaseSize.Y.Scale, BaseSize.Y.Offset)
+            TextLabel.Size =
+                UDim2.new(BaseSize.X.Scale, BaseSize.X.Offset - Width - Gap, BaseSize.Y.Scale, BaseSize.Y.Offset)
         end
 
         AddonList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(Update)
@@ -5615,7 +5816,10 @@ do
             TextTransparency = 0.25,
             ZIndex = 12001,
         })
-        table.insert(Library.Corners, New("UICorner", { CornerRadius = UDim.new(0, Library.CornerRadius / 2), Parent = AddRemoveButton }))
+        table.insert(
+            Library.Corners,
+            New("UICorner", { CornerRadius = UDim.new(0, Library.CornerRadius / 2), Parent = AddRemoveButton })
+        )
         local AddRemoveLabel = New("TextLabel", {
             BackgroundTransparency = 1,
             Position = UDim2.fromOffset(8, 0),
@@ -5656,7 +5860,10 @@ do
             TextTransparency = 0.25,
             ZIndex = 12001,
         })
-        table.insert(Library.Corners, New("UICorner", { CornerRadius = UDim.new(0, Library.CornerRadius / 2), Parent = OpenButton }))
+        table.insert(
+            Library.Corners,
+            New("UICorner", { CornerRadius = UDim.new(0, Library.CornerRadius / 2), Parent = OpenButton })
+        )
 
         local function RefreshRows()
             local Enabled = Element.KeybindMenuVisible == true
@@ -5672,9 +5879,12 @@ do
         local function GetMenuOffset()
             local Scale = Library.DPIScale or 1
             local MenuPixelWidth = MenuWidth * Scale
-            local MenuPixelHeight = (GetMobileHitSize(26) + (Element.KeybindMenuVisible and GetMobileHitSize(24) + 2 or 0)) * Scale
+            local MenuPixelHeight = (
+                GetMobileHitSize(26) + (Element.KeybindMenuVisible and GetMobileHitSize(24) + 2 or 0)
+            ) * Scale
             local RightX = ActionButton.AbsolutePosition.X + ActionButton.AbsoluteSize.X + MenuGap
-            local ViewportSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800, 600)
+            local ViewportSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize
+                or Vector2.new(800, 600)
             local XOffset = ActionButton.AbsoluteSize.X + MenuGap
             local YOffset = 0
 
@@ -5695,11 +5905,18 @@ do
             return { XOffset, YOffset }
         end
 
-        MenuTable = Library:AddContextMenu(ActionButton, UDim2.fromOffset(MenuWidth, 0), GetMenuOffset, 1, function(Active)
-            if Active then
-                RefreshRows()
-            end
-        end, true)
+        MenuTable = Library:AddContextMenu(
+            ActionButton,
+            UDim2.fromOffset(MenuWidth, 0),
+            GetMenuOffset,
+            1,
+            function(Active)
+                if Active then
+                    RefreshRows()
+                end
+            end,
+            true
+        )
         MenuTable.Menu.ZIndex = 12000
         MenuTable.List.Padding = UDim.new(0, 2)
         AddRemoveButton.Parent = MenuTable.Menu
@@ -6646,9 +6863,14 @@ do
             if Button.Disabled then
                 return
             end
-            TweenService:Create(Holder, Library.TweenInfo, {
-                BackgroundTransparency = GetBackgroundImageSurfaceTransparency(Info.HoverTransparency or 0, "Panel"),
-            }):Play()
+            TweenService
+                :Create(Holder, Library.TweenInfo, {
+                    BackgroundTransparency = GetBackgroundImageSurfaceTransparency(
+                        Info.HoverTransparency or 0,
+                        "Panel"
+                    ),
+                })
+                :Play()
             TweenService:Create(Label, Library.TweenInfo, { TextTransparency = 0 }):Play()
             PlayShine()
         end)
@@ -6656,9 +6878,11 @@ do
             if Button.Disabled then
                 return
             end
-            TweenService:Create(Holder, Library.TweenInfo, {
-                BackgroundTransparency = GetBackgroundImageSurfaceTransparency(Info.Transparency or 0.08, "Panel"),
-            }):Play()
+            TweenService
+                :Create(Holder, Library.TweenInfo, {
+                    BackgroundTransparency = GetBackgroundImageSurfaceTransparency(Info.Transparency or 0.08, "Panel"),
+                })
+                :Play()
             TweenService:Create(Label, Library.TweenInfo, { TextTransparency = 0.1 }):Play()
         end)
         Holder.MouseButton1Click:Connect(function()
@@ -6699,13 +6923,20 @@ do
         local Holder = Button.Holder
         task.spawn(function()
             while Holder and Holder.Parent do
-                TweenService:Create(Holder, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-                    BackgroundTransparency = GetBackgroundImageSurfaceTransparency(Info.Transparency + 0.06, "Panel"),
-                }):Play()
+                TweenService
+                    :Create(Holder, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+                        BackgroundTransparency = GetBackgroundImageSurfaceTransparency(
+                            Info.Transparency + 0.06,
+                            "Panel"
+                        ),
+                    })
+                    :Play()
                 task.wait(0.9)
-                TweenService:Create(Holder, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-                    BackgroundTransparency = GetBackgroundImageSurfaceTransparency(Info.Transparency, "Panel"),
-                }):Play()
+                TweenService
+                    :Create(Holder, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+                        BackgroundTransparency = GetBackgroundImageSurfaceTransparency(Info.Transparency, "Panel"),
+                    })
+                    :Play()
                 task.wait(0.9)
             end
         end)
@@ -8171,7 +8402,8 @@ do
             end
 
             DisplayButton.Position = ValueImage and UDim2.fromOffset(30, 0) or UDim2.fromOffset(8, 0)
-            DisplayButton.Size = ValueImage and UDim2.new(1, -56, 0, DropdownHeight) or UDim2.new(1, -34, 0, DropdownHeight)
+            DisplayButton.Size = ValueImage and UDim2.new(1, -56, 0, DropdownHeight)
+                or UDim2.new(1, -34, 0, DropdownHeight)
         end
 
         function Dropdown:OnChanged(Func)
@@ -8270,7 +8502,8 @@ do
                             return GetSchemeValue(Default) or Library.Scheme[Default]
                         end
 
-                        local PreviewBackgroundColor = ResolvePreviewColor(CardInfo.PreviewBackgroundColor, "BackgroundColor")
+                        local PreviewBackgroundColor =
+                            ResolvePreviewColor(CardInfo.PreviewBackgroundColor, "BackgroundColor")
                         local PreviewMainColor = ResolvePreviewColor(CardInfo.PreviewMainColor, "MainColor")
                         local PreviewAccentColor = ResolvePreviewColor(CardInfo.PreviewAccentColor, "AccentColor")
                         local PreviewOutlineColor = ResolvePreviewColor(CardInfo.PreviewOutlineColor, "OutlineColor")
@@ -8283,10 +8516,11 @@ do
                             Library:AddGradient(Container, {
                                 Color = CardInfo.GradientColorSequence,
                                 Rotation = CardInfo.GradientRotation or 35,
-                                Transparency = CardInfo.GradientTransparency or NumberSequence.new({
-                                    NumberSequenceKeypoint.new(0, 0.05),
-                                    NumberSequenceKeypoint.new(1, 0.35),
-                                }),
+                                Transparency = CardInfo.GradientTransparency
+                                    or NumberSequence.new({
+                                        NumberSequenceKeypoint.new(0, 0.05),
+                                        NumberSequenceKeypoint.new(1, 0.35),
+                                    }),
                             })
                         end
 
@@ -8469,7 +8703,8 @@ do
 
                     Button = New("TextButton", {
                         BackgroundTransparency = 1,
-                        Size = ValueImage and UDim2.new(1, -18, 0, DropdownHeight) or UDim2.new(1, 0, 0, DropdownHeight),
+                        Size = ValueImage and UDim2.new(1, -18, 0, DropdownHeight)
+                            or UDim2.new(1, 0, 0, DropdownHeight),
                         Position = ValueImage and UDim2.fromOffset(18, 0) or UDim2.fromOffset(0, 0),
                         Text = FormattedValue,
                         TextSize = 14,
@@ -9728,14 +9963,17 @@ do
                 BackgroundColor3 = DrawingInfo.BackgroundColor3 or "BackgroundColor",
                 BackgroundTransparency = DrawingInfo.BackgroundTransparency or 1,
                 BorderSizePixel = 0,
-                Image = ResolveCanvasImage(DrawingInfo.Image or DrawingInfo.Texture or DrawingInfo.Url or DrawingInfo.URL),
+                Image = ResolveCanvasImage(
+                    DrawingInfo.Image or DrawingInfo.Texture or DrawingInfo.Url or DrawingInfo.URL
+                ),
                 ImageColor3 = DrawingInfo.ImageColor3 or DrawingInfo.Color or "WhiteColor",
                 ImageRectOffset = DrawingInfo.ImageRectOffset or DrawingInfo.RectOffset or Vector2.zero,
                 ImageRectSize = DrawingInfo.ImageRectSize or DrawingInfo.RectSize or Vector2.zero,
                 ImageTransparency = DrawingInfo.ImageTransparency or DrawingInfo.Transparency or 0,
                 Position = DrawingInfo.Position or UDim2.fromScale(0, 0),
                 Rotation = tonumber(DrawingInfo.Rotation) or 0,
-                ScaleType = DrawingInfo.ScaleType or (DrawingInfo.TileSize and Enum.ScaleType.Tile or Enum.ScaleType.Crop),
+                ScaleType = DrawingInfo.ScaleType
+                    or (DrawingInfo.TileSize and Enum.ScaleType.Tile or Enum.ScaleType.Crop),
                 Size = DrawingInfo.Size or UDim2.fromOffset(44, 44),
                 TileSize = DrawingInfo.TileSize,
                 Visible = DrawingInfo.Visible ~= false,
@@ -9793,8 +10031,8 @@ do
                 continue
             end
 
-            local DrawingType = tostring(DrawingInfo.Type or DrawingInfo.Kind or (DrawingInfo.Image and "Image" or "Frame"))
-                :lower()
+            local DrawingType =
+                tostring(DrawingInfo.Type or DrawingInfo.Kind or (DrawingInfo.Image and "Image" or "Frame")):lower()
             if DrawingType == "text" or DrawingType == "label" then
                 Canvas:AddText(DrawingInfo)
             elseif DrawingType == "image" or DrawingType == "texture" then
@@ -10103,10 +10341,8 @@ do
                 ActivePoint = ClosestIndex
                 HoverLabel.Text = tostring(Values[ClosestIndex])
                 HoverLabel.TextTransparency = 0.1
-                HoverLabel.Position = UDim2.fromOffset(
-                    Padding + ((ClosestIndex - 1) / math.max(1, #Values - 1)) * Width,
-                    TopPadding - 8
-                )
+                HoverLabel.Position =
+                    UDim2.fromOffset(Padding + ((ClosestIndex - 1) / math.max(1, #Values - 1)) * Width, TopPadding - 8)
             else
                 ClearHover()
             end
@@ -10122,7 +10358,10 @@ do
             end
         end)
         HoverButton.InputChanged:Connect(function(Input: InputObject)
-            if Input.UserInputType == Enum.UserInputType.Touch or Input.UserInputType == Enum.UserInputType.MouseMovement then
+            if
+                Input.UserInputType == Enum.UserInputType.Touch
+                or Input.UserInputType == Enum.UserInputType.MouseMovement
+            then
                 UpdateHover(GetPointerPosition(Input))
             end
         end)
@@ -10279,7 +10518,12 @@ do
                 ZIndex = 3,
             })
             Canvas:AddText({
-                Text = string.format("%s   %d days%s", TeamName, AccountAge, HealthText and ("   " .. HealthText) or ""),
+                Text = string.format(
+                    "%s   %d days%s",
+                    TeamName,
+                    AccountAge,
+                    HealthText and ("   " .. HealthText) or ""
+                ),
                 Position = UDim2.fromOffset(88, 58),
                 Size = UDim2.new(1, -112, 0, 16),
                 TextSize = 13,
@@ -11910,7 +12154,10 @@ function Library:CreatePopup(Info, Time)
         ZIndex = 10000,
         Parent = PopupParent,
     })
-    table.insert(Library.Corners, New("UICorner", { CornerRadius = UDim.new(0, Library.CornerRadius + 2), Parent = Card }))
+    table.insert(
+        Library.Corners,
+        New("UICorner", { CornerRadius = UDim.new(0, Library.CornerRadius + 2), Parent = Card })
+    )
     Library:AddOutline(Card, {
         Color = Info.OutlineColor or "OutlineColor",
         Transparency = 0.05,
@@ -12021,7 +12268,10 @@ function Library:CreatePopup(Info, Time)
             ZIndex = 10003,
             Parent = Header,
         })
-        table.insert(Library.Corners, New("UICorner", { CornerRadius = UDim.new(0, Library.CornerRadius), Parent = CloseButton }))
+        table.insert(
+            Library.Corners,
+            New("UICorner", { CornerRadius = UDim.new(0, Library.CornerRadius), Parent = CloseButton })
+        )
         Library:AddOutline(CloseButton, { Transparency = 0.25, ShadowTransparency = 1 })
     end
 
@@ -12098,7 +12348,10 @@ function Library:CreatePopup(Info, Time)
                 PaddingRight = UDim.new(0, 10),
                 Parent = Button,
             })
-            table.insert(Library.Corners, New("UICorner", { CornerRadius = UDim.new(0, Library.CornerRadius), Parent = Button }))
+            table.insert(
+                Library.Corners,
+                New("UICorner", { CornerRadius = UDim.new(0, Library.CornerRadius), Parent = Button })
+            )
             Library:AddOutline(Button, {
                 Color = ButtonOutlineColor,
                 Transparency = Variant == "Ghost" and 0.85 or 0.2,
@@ -12370,7 +12623,8 @@ function Library:CreateWindow(WindowInfo)
         FullscreenBackground.Visible = WindowInfo.FullscreenBackground == true
         FullscreenBackground.BackgroundColor3 = WindowInfo.FullscreenBackgroundColor
         FullscreenBackground.BackgroundTransparency = WindowInfo.FullscreenBackgroundTransparency
-        WindowInfo.FullscreenBackgroundImage = ResolveWindowImage(WindowInfo.FullscreenBackgroundImage, "WindowFullscreenBackground")
+        WindowInfo.FullscreenBackgroundImage =
+            ResolveWindowImage(WindowInfo.FullscreenBackgroundImage, "WindowFullscreenBackground")
         FullscreenBackground.Image = WindowInfo.FullscreenBackgroundImage or ""
         FullscreenBackground.ImageTransparency = WindowInfo.FullscreenBackgroundImageTransparency
         FullscreenBackground.ScaleType = WindowInfo.FullscreenBackgroundImageScaleType
@@ -12886,9 +13140,7 @@ function Library:CreateWindow(WindowInfo)
 
         Image = ResolveWindowImage(Image, "WindowFullscreenBackground")
         FullscreenBackground.Image = Image or ""
-        FullscreenBackground.Visible = WindowInfo.FullscreenBackground == true
-            and Image ~= nil
-            and Image ~= ""
+        FullscreenBackground.Visible = WindowInfo.FullscreenBackground == true and Image ~= nil and Image ~= ""
         WindowInfo.FullscreenBackgroundImage = Image
         if Image and Image ~= "" then
             FullscreenBackground.BackgroundTransparency = math.max(0.95, WindowInfo.FullscreenBackgroundTransparency)
@@ -12934,7 +13186,9 @@ function Library:CreateWindow(WindowInfo)
     function Window:SetGradient(Enabled: boolean, GradientInfo)
         WindowInfo.Gradient = Enabled == true
         if GradientInfo then
-            WindowInfo.GradientColorSequence = GradientInfo.Color or GradientInfo.ColorSequence or WindowInfo.GradientColorSequence
+            WindowInfo.GradientColorSequence = GradientInfo.Color
+                or GradientInfo.ColorSequence
+                or WindowInfo.GradientColorSequence
             WindowInfo.GradientRotation = GradientInfo.Rotation or WindowInfo.GradientRotation
             WindowInfo.GradientTransparency = GradientInfo.Transparency or WindowInfo.GradientTransparency
         end
@@ -14098,7 +14352,8 @@ function Library:CreateWindow(WindowInfo)
                 or (Info.DisableHoverGrow and CardHeight or CardHeight + (FullCard and 2 or 4))
             local HasThumbnail = Info.Thumbnail ~= nil and tostring(Info.Thumbnail) ~= ""
             local MinimumBarHeight = math.min(44, CardHeight)
-            local BarHeight = math.clamp(Info.BarHeight or (HasThumbnail and 56 or CardHeight), MinimumBarHeight, CardHeight)
+            local BarHeight =
+                math.clamp(Info.BarHeight or (HasThumbnail and 56 or CardHeight), MinimumBarHeight, CardHeight)
             local CardParent = FullCard and GetSideParent(Info.Side) or (Side == 1 and TabLeft or TabRight)
             local CardHolder = New("TextButton", {
                 AutoButtonColor = false,
@@ -14180,10 +14435,15 @@ function Library:CreateWindow(WindowInfo)
             })
 
             local function SetHover(Hovering)
-                TweenService:Create(CardHolder, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                    BackgroundTransparency = GetBackgroundImageSurfaceTransparency(Hovering and 0.02 or 0.1, "Panel"),
-                    Size = Hovering and UDim2.new(1, 0, 0, HoverHeight) or UDim2.new(1, 0, 0, CardHeight),
-                }):Play()
+                TweenService
+                    :Create(CardHolder, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        BackgroundTransparency = GetBackgroundImageSurfaceTransparency(
+                            Hovering and 0.02 or 0.1,
+                            "Panel"
+                        ),
+                        Size = Hovering and UDim2.new(1, 0, 0, HoverHeight) or UDim2.new(1, 0, 0, CardHeight),
+                    })
+                    :Play()
                 TweenService
                     :Create(Bar, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                         BackgroundTransparency = Hovering and math.max(0, (Info.BottomBarTransparency or 0.25) - 0.08)
@@ -14254,9 +14514,11 @@ function Library:CreateWindow(WindowInfo)
                 Library.ActiveTab:Hide()
             end
 
-            TweenService:Create(TabButton, Library.TweenInfo, {
-                BackgroundTransparency = GetBackgroundImageSurfaceTransparency(IsCardTabs and 0.02 or 0, "Panel"),
-            }):Play()
+            TweenService
+                :Create(TabButton, Library.TweenInfo, {
+                    BackgroundTransparency = GetBackgroundImageSurfaceTransparency(IsCardTabs and 0.02 or 0, "Panel"),
+                })
+                :Play()
             TweenService:Create(TabLabel, Library.TweenInfo, {
                 TextTransparency = 0,
             }):Play()
@@ -14285,9 +14547,11 @@ function Library:CreateWindow(WindowInfo)
         end
 
         function Tab:Hide()
-            TweenService:Create(TabButton, Library.TweenInfo, {
-                BackgroundTransparency = GetBackgroundImageSurfaceTransparency(IsCardTabs and 0.1 or 1, "Panel"),
-            }):Play()
+            TweenService
+                :Create(TabButton, Library.TweenInfo, {
+                    BackgroundTransparency = GetBackgroundImageSurfaceTransparency(IsCardTabs and 0.1 or 1, "Panel"),
+                })
+                :Play()
             TweenService:Create(TabLabel, Library.TweenInfo, {
                 TextTransparency = 0.5,
             }):Play()
@@ -14402,8 +14666,8 @@ function Library:CreateWindow(WindowInfo)
                 Text = "Discord: " .. tostring(Info.DiscordInvite),
                 Icon = "message-circle",
                 Callback = function()
-                    if setclipboard then
-                        setclipboard(tostring(Info.DiscordInvite))
+                    local Copied = CompatSetClipboard(tostring(Info.DiscordInvite))
+                    if Copied then
                         Library:NotifySuccess({
                             Title = "Copied",
                             Description = "Discord invite copied to clipboard.",
@@ -14425,8 +14689,8 @@ function Library:CreateWindow(WindowInfo)
                     Text = tostring(SocialName) .. ": " .. tostring(SocialLink),
                     Icon = "link",
                     Callback = function()
-                        if setclipboard then
-                            setclipboard(tostring(SocialLink))
+                        local Copied = CompatSetClipboard(tostring(SocialLink))
+                        if Copied then
                             Library:NotifySuccess({
                                 Title = "Copied",
                                 Description = tostring(SocialName) .. " link copied to clipboard.",
@@ -14451,14 +14715,12 @@ function Library:CreateWindow(WindowInfo)
                 "Tabs loaded: %d\nDevice: %s\nInput: %s\nDPI scale: %d%%",
                 GetTableSize(Library.Tabs),
                 tostring(Library.DevicePlatform or "Unknown"),
-                Library.IsHybridDevice and "Hybrid"
-                    or (Library.IsMobile and "Touch" or "Mouse/Keyboard"),
+                Library.IsHybridDevice and "Hybrid" or (Library.IsMobile and "Touch" or "Mouse/Keyboard"),
                 math.floor((Library.DPIScale or 1) * 100)
             ),
             Icon = "monitor",
             Height = 92,
-            Badge = Library.IsHybridDevice and "HYBRID"
-                or (Library.IsMobile and "MOBILE" or "DESKTOP"),
+            Badge = Library.IsHybridDevice and "HYBRID" or (Library.IsMobile and "MOBILE" or "DESKTOP"),
         })
         Stats:AddButton({
             Text = "Refresh hub overview",
@@ -14468,8 +14730,7 @@ function Library:CreateWindow(WindowInfo)
                         "Tabs loaded: %d\nDevice: %s\nInput: %s\nDPI scale: %d%%",
                         GetTableSize(Library.Tabs),
                         tostring(Library.DevicePlatform or "Unknown"),
-                        Library.IsHybridDevice and "Hybrid"
-                            or (Library.IsMobile and "Touch" or "Mouse/Keyboard"),
+                        Library.IsHybridDevice and "Hybrid" or (Library.IsMobile and "Touch" or "Mouse/Keyboard"),
                         math.floor((Library.DPIScale or 1) * 100)
                     )
                 )
@@ -14505,7 +14766,12 @@ function Library:CreateWindow(WindowInfo)
                 Title = Info.TopUsersTitle or "Top Users",
                 Subtitle = Info.TopUsersSubtitle or "Live dashboard ranking",
                 Users = Info.TopUsers or {
-                    { Name = LocalPlayer.Name, DisplayName = LocalPlayer.DisplayName, UserId = LocalPlayer.UserId, Score = 100 },
+                    {
+                        Name = LocalPlayer.Name,
+                        DisplayName = LocalPlayer.DisplayName,
+                        UserId = LocalPlayer.UserId,
+                        Score = 100,
+                    },
                 },
                 MaxUsers = Info.TopUsersMax or 4,
                 OnUserClick = Info.OnTopUserClick
@@ -14523,7 +14789,8 @@ function Library:CreateWindow(WindowInfo)
                 Icon = Info.DetailTabIcon or "panel-top-open",
                 Description = Info.DetailTabDescription or "A hidden tab opened from a dashboard card.",
             })
-            local DetailOverview = DetailTab:AddFullGroupbox(Info.DetailGroupTitle or "Full Detail Players", "user-round")
+            local DetailOverview =
+                DetailTab:AddFullGroupbox(Info.DetailGroupTitle or "Full Detail Players", "user-round")
             DetailOverview:AddPlayerCard("DashboardDetailPlayerCard", {
                 Player = Info.Player or LocalPlayer,
                 Height = 120,
@@ -14533,7 +14800,12 @@ function Library:CreateWindow(WindowInfo)
                 Title = "Top User Box",
                 Subtitle = "This tab is not shown in the tab holder",
                 Users = Info.TopUsers or {
-                    { Name = LocalPlayer.Name, DisplayName = LocalPlayer.DisplayName, UserId = LocalPlayer.UserId, Score = 100 },
+                    {
+                        Name = LocalPlayer.Name,
+                        DisplayName = LocalPlayer.DisplayName,
+                        UserId = LocalPlayer.UserId,
+                        Score = 100,
+                    },
                 },
                 MaxUsers = Info.TopUsersMax or 5,
             })
@@ -14541,7 +14813,8 @@ function Library:CreateWindow(WindowInfo)
             Dashboard:AddCard({
                 Side = Info.DetailCardSide or "Full",
                 Title = Info.DetailCardTitle or "Open hidden player details",
-                Desc = Info.DetailCardDescription or "Card tab index: opens a dedicated hidden tab without adding it to the tab holder.",
+                Desc = Info.DetailCardDescription
+                    or "Card tab index: opens a dedicated hidden tab without adding it to the tab holder.",
                 Icon = "external-link",
                 Height = Info.DetailCardHeight or 82,
                 BarHeight = Info.DetailCardBarHeight or 82,
@@ -15642,11 +15915,7 @@ function Library:CreateWindow(WindowInfo)
             return
         end
 
-        if
-            Library.IsDesktop
-            and Library.EnableEscapeToClose
-            and Input.KeyCode == Enum.KeyCode.Escape
-        then
+        if Library.IsDesktop and Library.EnableEscapeToClose and Input.KeyCode == Enum.KeyCode.Escape then
             if Library:CloseOpenMenus() then
                 return
             end
@@ -15773,7 +16042,8 @@ function Library:CreateLoading(LoadingInfo)
 
     local BackdropTransparency = math.clamp(tonumber(LoadingInfo.BackdropTransparency) or 0.35, 0, 1)
     local SurfaceTransparency = math.clamp(tonumber(LoadingInfo.SurfaceTransparency) or 0, 0, 1)
-    local SurfaceFillTransparency = math.clamp(tonumber(LoadingInfo.SurfaceFillTransparency) or SurfaceTransparency, 0, 1)
+    local SurfaceFillTransparency =
+        math.clamp(tonumber(LoadingInfo.SurfaceFillTransparency) or SurfaceTransparency, 0, 1)
     local ParticleCount = math.clamp(math.floor(tonumber(LoadingInfo.ParticleCount) or 0), 0, 48)
 
     local DefaultProgressTextureImage = CustomImageManager.GetAsset("LoadingBarPixelTextureV2")
@@ -15805,7 +16075,8 @@ function Library:CreateLoading(LoadingInfo)
 
         if typeof(Images) == "table" then
             for Index, Image in Images do
-                local ResolvedImage = ResolveLoadingImageAsset(Image, string.format("%s%d_", Prefix or "LoadingFrame_", Index))
+                local ResolvedImage =
+                    ResolveLoadingImageAsset(Image, string.format("%s%d_", Prefix or "LoadingFrame_", Index))
                 if ResolvedImage and ResolvedImage ~= "" then
                     table.insert(Frames, ResolvedImage)
                 end
@@ -15910,10 +16181,7 @@ function Library:CreateLoading(LoadingInfo)
                     Value = tonumber(Stop) or Value
                 end
 
-                table.insert(
-                    Keypoints,
-                    NumberSequenceKeypoint.new(math.clamp(Position, 0, 1), math.clamp(Value, 0, 1))
-                )
+                table.insert(Keypoints, NumberSequenceKeypoint.new(math.clamp(Position, 0, 1), math.clamp(Value, 0, 1)))
             end
         end
 
@@ -16008,7 +16276,8 @@ function Library:CreateLoading(LoadingInfo)
         end)
     end
 
-    local UseProgressTexture = LoadingInfo.ProgressTexture or LoadingInfo.ProgressShine
+    local UseProgressTexture = LoadingInfo.ProgressTexture
+        or LoadingInfo.ProgressShine
         or typeof(LoadingInfo.ProgressTextureFrames) == "table"
     local ProgressTextureTransparency = math.clamp(tonumber(LoadingInfo.ProgressTextureTransparency) or 0.42, 0, 1)
     local ProgressTextureSpeed = math.max(0, tonumber(LoadingInfo.ProgressTextureSpeed) or 0)
@@ -16047,11 +16316,16 @@ function Library:CreateLoading(LoadingInfo)
     local ProgressTrackTextureColor = LoadingInfo.ProgressTrackTextureColor or "AccentColor"
     local ProgressTrackTextureTileSize = LoadingInfo.ProgressTrackTextureTileSize or ProgressTextureTileSize
     local ProgressBarHeight = tonumber(LoadingInfo.ProgressBarHeight)
-    if not ProgressBarHeight and typeof(LoadingInfo.ProgressBarSize) == "UDim2" and LoadingInfo.ProgressBarSize.Y.Offset ~= 0 then
+    if
+        not ProgressBarHeight
+        and typeof(LoadingInfo.ProgressBarSize) == "UDim2"
+        and LoadingInfo.ProgressBarSize.Y.Offset ~= 0
+    then
         ProgressBarHeight = math.abs(LoadingInfo.ProgressBarSize.Y.Offset)
     end
     ProgressBarHeight = math.max(4, ProgressBarHeight or 15)
-    local ProgressBarPadding = math.clamp(tonumber(LoadingInfo.ProgressBarPadding) or 0, 0, math.floor(ProgressBarHeight / 2))
+    local ProgressBarPadding =
+        math.clamp(tonumber(LoadingInfo.ProgressBarPadding) or 0, 0, math.floor(ProgressBarHeight / 2))
     local ProgressBarSize = LoadingInfo.ProgressBarSize or UDim2.new(0.7, 0, 0, ProgressBarHeight)
     local ProgressBarTransparency = math.clamp(tonumber(LoadingInfo.ProgressBarTransparency) or 0, 0, 1)
     local ProgressFillTransparency = math.clamp(tonumber(LoadingInfo.ProgressFillTransparency) or 0, 0, 1)
@@ -16065,13 +16339,10 @@ function Library:CreateLoading(LoadingInfo)
     local ProgressCapTransparency = math.clamp(tonumber(LoadingInfo.ProgressCapTransparency) or 0.12, 0, 1)
     local SmoothProgress = LoadingInfo.SmoothProgress ~= false
     local SmoothProgressDuration = tonumber(LoadingInfo.SmoothProgressDuration)
-    local SmoothProgressDefaultDuration =
-        math.max(0.05, tonumber(LoadingInfo.SmoothProgressDefaultDuration) or 0.58)
+    local SmoothProgressDefaultDuration = math.max(0.05, tonumber(LoadingInfo.SmoothProgressDefaultDuration) or 0.58)
     local SmoothProgressMinDuration = math.max(0.02, tonumber(LoadingInfo.SmoothProgressMinDuration) or 0.26)
-    local SmoothProgressMaxDuration = math.max(
-        SmoothProgressMinDuration,
-        tonumber(LoadingInfo.SmoothProgressMaxDuration) or 1.45
-    )
+    local SmoothProgressMaxDuration =
+        math.max(SmoothProgressMinDuration, tonumber(LoadingInfo.SmoothProgressMaxDuration) or 1.45)
     local SmoothProgressCadenceScale = math.clamp(tonumber(LoadingInfo.SmoothProgressCadenceScale) or 0.86, 0.1, 2)
     local function GetTextureScrollOffset(TileSize, Fallback)
         if typeof(TileSize) == "UDim2" and TileSize.X.Offset ~= 0 then
@@ -16150,10 +16421,7 @@ function Library:CreateLoading(LoadingInfo)
         end,
         BackgroundTransparency = SurfaceTransparency,
         Position = UseEntranceAnimation and UDim2.new(0.5, 0, 0.5, 18) or UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.fromOffset(
-            GetLoadingFrameWidth(),
-            Loading.WindowHeight
-        ),
+        Size = UDim2.fromOffset(GetLoadingFrameWidth(), Loading.WindowHeight),
         ClipsDescendants = true,
         Text = "",
         AutoButtonColor = false,
@@ -16229,11 +16497,10 @@ function Library:CreateLoading(LoadingInfo)
         end
 
         if not TransitionOverlay then
-            local ColorSequenceValue, TransparencySequenceValue =
-                BuildLoadingGradientSequences(
-                    LoadingInfo.GradientTransitionStops,
-                    LoadingInfo.GradientTransitionTransparency or LoadingInfo.GradientTransitionTransparencyStops
-                )
+            local ColorSequenceValue, TransparencySequenceValue = BuildLoadingGradientSequences(
+                LoadingInfo.GradientTransitionStops,
+                LoadingInfo.GradientTransitionTransparency or LoadingInfo.GradientTransitionTransparencyStops
+            )
 
             TransitionOverlay = New("Frame", {
                 Name = "GradientTransitionOverlay",
@@ -16408,7 +16675,12 @@ function Library:CreateLoading(LoadingInfo)
                 })
 
                 AddDrawingCorner(DrawingTexture, Info.TextureCornerRadius or Info.CornerRadius or Info.Radius)
-                StartImageFrameAnimation(DrawingTexture, DrawingTextureFrames, Info.FrameRate or Info.FPS, DrawingTexture)
+                StartImageFrameAnimation(
+                    DrawingTexture,
+                    DrawingTextureFrames,
+                    Info.FrameRate or Info.FPS,
+                    DrawingTexture
+                )
             end
         end
 
@@ -16451,7 +16723,8 @@ function Library:CreateLoading(LoadingInfo)
             Library:AddGradient(Drawing, Info.Gradient)
         end
 
-        local DrawingFrames = ResolveLoadingImageFrames(Info.Frames or Info.Images, "LoadingDrawingImageFrame_", Drawing.Image)
+        local DrawingFrames =
+            ResolveLoadingImageFrames(Info.Frames or Info.Images, "LoadingDrawingImageFrame_", Drawing.Image)
         StartImageFrameAnimation(Drawing, DrawingFrames, Info.FrameRate or Info.FPS, Drawing)
 
         return TrackDrawing(Drawing)
@@ -16622,8 +16895,8 @@ function Library:CreateLoading(LoadingInfo)
                 continue
             end
 
-            local DrawingType = tostring(DrawingInfo.Type or DrawingInfo.Kind or (DrawingInfo.Image and "Image" or "Frame"))
-                :lower()
+            local DrawingType =
+                tostring(DrawingInfo.Type or DrawingInfo.Kind or (DrawingInfo.Image and "Image" or "Frame")):lower()
             if DrawingType == "image" or DrawingType == "texture" then
                 Loading:AddDrawingImage(DrawingInfo)
             elseif DrawingType == "line" then
@@ -16649,7 +16922,6 @@ function Library:CreateLoading(LoadingInfo)
             TweenInfo.new(EntranceAnimationDuration, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
             { Scale = TargetScale }
         )
-
     end
     if UseEntranceAnimation then
         PlayLoadingGradientTransition(false)
@@ -16674,7 +16946,6 @@ function Library:CreateLoading(LoadingInfo)
             TweenInfo.new(8, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1),
             { Rotation = 380 }
         )
-
     end
 
     if LoadingInfo.Animated and LoadingInfo.Particles and ParticleCount > 0 then
@@ -17026,7 +17297,12 @@ function Library:CreateLoading(LoadingInfo)
                 { Position = UDim2.fromOffset(-ProgressTrackTextureScrollOffset, 0) }
             )
         end
-        StartImageFrameAnimation(TrackTexture, ProgressTrackTextureFrames, ProgressTrackTextureFrameRate, "ProgressTrack")
+        StartImageFrameAnimation(
+            TrackTexture,
+            ProgressTrackTextureFrames,
+            ProgressTrackTextureFrameRate,
+            "ProgressTrack"
+        )
     end
 
     local SliderFill = New("Frame", {
@@ -17054,10 +17330,7 @@ function Library:CreateLoading(LoadingInfo)
         ZIndex = 5,
         Parent = SliderContent,
     })
-    table.insert(
-        Library.Corners,
-        New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = SliderCap })
-    )
+    table.insert(Library.Corners, New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = SliderCap }))
     Library:AddGradient(SliderCap, {
         Rotation = 90,
         Transparency = NumberSequence.new({
@@ -17198,7 +17471,8 @@ function Library:CreateLoading(LoadingInfo)
 
         ProgressAnimationElapsed += math.clamp(DeltaTime or 0, 0, 1 / 15)
         local Alpha = math.clamp(ProgressAnimationElapsed / ProgressAnimationDuration, 0, 1)
-        DisplayedProgress = ProgressAnimationStart + ((TargetProgress - ProgressAnimationStart) * EaseLoadingProgress(Alpha))
+        DisplayedProgress = ProgressAnimationStart
+            + ((TargetProgress - ProgressAnimationStart) * EaseLoadingProgress(Alpha))
         ApplyDisplayedProgress(DisplayedProgress)
 
         if Alpha >= 1 then
@@ -17460,21 +17734,34 @@ function Library:CreateLoading(LoadingInfo)
 
         if ProgressTexture then
             ProgressTexture.Image = ProgressTextureImage or ""
-            StartImageFrameAnimation(ProgressTexture, ProgressTextureFrames, ProgressTextureFrameRate, "ProgressTexture")
+            StartImageFrameAnimation(
+                ProgressTexture,
+                ProgressTextureFrames,
+                ProgressTextureFrameRate,
+                "ProgressTexture"
+            )
         end
 
         if TrackTexture and not HasCustomProgressTrackTexture then
             ProgressTrackTextureFrames = ProgressTextureFrames
             ProgressTrackTextureImage = ProgressTextureImage
             TrackTexture.Image = ProgressTextureImage or ""
-            StartImageFrameAnimation(TrackTexture, ProgressTrackTextureFrames, ProgressTrackTextureFrameRate, "ProgressTrack")
+            StartImageFrameAnimation(
+                TrackTexture,
+                ProgressTrackTextureFrames,
+                ProgressTrackTextureFrameRate,
+                "ProgressTrack"
+            )
         end
     end
 
     function Loading:SetProgressTrackTexture(Image)
         HasCustomProgressTrackTexture = true
-        ProgressTrackTextureImage =
-            ResolveLoadingImageAsset(Image, "LoadingBarTrackTexture_", ProgressTextureImage or DefaultProgressTextureImage)
+        ProgressTrackTextureImage = ResolveLoadingImageAsset(
+            Image,
+            "LoadingBarTrackTexture_",
+            ProgressTextureImage or DefaultProgressTextureImage
+        )
         ProgressTrackTextureFrames = { ProgressTrackTextureImage }
         StopImageFrameAnimation("ProgressTrack")
         if TrackTexture then
@@ -17484,8 +17771,11 @@ function Library:CreateLoading(LoadingInfo)
 
     function Loading:SetProgressTrackTextureFrames(Images, FrameRate)
         HasCustomProgressTrackTexture = true
-        ProgressTrackTextureFrames =
-            ResolveLoadingImageFrames(Images, "LoadingBarTrackFrame_", ProgressTrackTextureImage or ProgressTextureImage)
+        ProgressTrackTextureFrames = ResolveLoadingImageFrames(
+            Images,
+            "LoadingBarTrackFrame_",
+            ProgressTrackTextureImage or ProgressTextureImage
+        )
         ProgressTrackTextureFrameRate = math.clamp(tonumber(FrameRate) or ProgressTrackTextureFrameRate, 1, 60)
 
         if #ProgressTrackTextureFrames > 0 then
@@ -17494,7 +17784,12 @@ function Library:CreateLoading(LoadingInfo)
 
         if TrackTexture then
             TrackTexture.Image = ProgressTrackTextureImage or ProgressTextureImage or ""
-            StartImageFrameAnimation(TrackTexture, ProgressTrackTextureFrames, ProgressTrackTextureFrameRate, "ProgressTrack")
+            StartImageFrameAnimation(
+                TrackTexture,
+                ProgressTrackTextureFrames,
+                ProgressTrackTextureFrameRate,
+                "ProgressTrack"
+            )
         end
     end
 
@@ -17506,8 +17801,7 @@ function Library:CreateLoading(LoadingInfo)
     end
 
     function Loading:SetProgressTrackTextureTransparency(Transparency)
-        ProgressTrackTextureTransparency =
-            math.clamp(tonumber(Transparency) or ProgressTrackTextureTransparency, 0, 1)
+        ProgressTrackTextureTransparency = math.clamp(tonumber(Transparency) or ProgressTrackTextureTransparency, 0, 1)
         if TrackTexture then
             TrackTexture.ImageTransparency = ProgressTrackTextureTransparency
         end
@@ -17766,20 +18060,24 @@ function Library:CreateLoading(LoadingInfo)
 
         if LoadingInfo.Animated and LoadingInfo.ExitAnimation and ScreenGui.Parent then
             MainFrame.Active = false
-            TweenService:Create(
-                MainFrame,
-                TweenInfo.new(ExitAnimationDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-                {
-                    BackgroundTransparency = 1,
-                    Position = UDim2.new(0.5, 0, 0.5, 14),
-                }
-            ):Play()
-            if SurfaceFill then
-                TweenService:Create(
-                    SurfaceFill,
+            TweenService
+                :Create(
+                    MainFrame,
                     TweenInfo.new(ExitAnimationDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-                    { BackgroundTransparency = 1 }
-                ):Play()
+                    {
+                        BackgroundTransparency = 1,
+                        Position = UDim2.new(0.5, 0, 0.5, 14),
+                    }
+                )
+                :Play()
+            if SurfaceFill then
+                TweenService
+                    :Create(
+                        SurfaceFill,
+                        TweenInfo.new(ExitAnimationDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                        { BackgroundTransparency = 1 }
+                    )
+                    :Play()
             end
             TweenService:Create(
                 MainScale,
@@ -17788,11 +18086,13 @@ function Library:CreateLoading(LoadingInfo)
             ):Play()
 
             if Backdrop then
-                TweenService:Create(
-                    Backdrop,
-                    TweenInfo.new(ExitAnimationDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-                    { BackgroundTransparency = 1 }
-                ):Play()
+                TweenService
+                    :Create(
+                        Backdrop,
+                        TweenInfo.new(ExitAnimationDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                        { BackgroundTransparency = 1 }
+                    )
+                    :Play()
             end
 
             local ExitTransitionDelay = math.max(ExitAnimationDuration, PlayLoadingGradientTransition(true))
@@ -17846,5 +18146,10 @@ Library:GiveSignal(Players.PlayerRemoving:Connect(OnPlayerChange))
 Library:GiveSignal(Teams.ChildAdded:Connect(OnTeamChange))
 Library:GiveSignal(Teams.ChildRemoved:Connect(OnTeamChange))
 
-getgenv().Library = Library
+do
+    local Env = CompatGetGlobalEnv()
+    if typeof(Env) == "table" then
+        Env.Library = Library
+    end
+end
 return Library

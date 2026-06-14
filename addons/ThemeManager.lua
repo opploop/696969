@@ -1,41 +1,137 @@
 local cloneref = (cloneref or clonereference or function(instance: any)
     return instance
 end)
-local clonefunction = (clonefunction or copyfunction or function(func) 
-    return func 
-end)
 
 local HttpService: HttpService = cloneref(game:GetService("HttpService"))
-local isfolder, isfile, listfiles = isfolder, isfile, listfiles
 
-if typeof(clonefunction) == "function" then
-    -- Fix is_____ functions for shitsploits, those functions should never error, only return a boolean.
-
-    local
-        isfolder_copy,
-        isfile_copy,
-        listfiles_copy = clonefunction(isfolder), clonefunction(isfile), clonefunction(listfiles)
-
-    local isfolder_success, isfolder_error = pcall(function()
-        return isfolder_copy("test" .. tostring(math.random(1000000, 9999999)))
+local function GetCompat()
+    local ok, env = pcall(function()
+        if typeof(getgenv) == "function" then
+            return getgenv()
+        end
+        return _G
     end)
 
-    if isfolder_success == false or typeof(isfolder_error) ~= "boolean" then
-        isfolder = function(folder)
-            local success, data = pcall(isfolder_copy, folder)
-            return (if success then data else false)
-        end
-
-        isfile = function(file)
-            local success, data = pcall(isfile_copy, file)
-            return (if success then data else false)
-        end
-
-        listfiles = function(folder)
-            local success, data = pcall(listfiles_copy, folder)
-            return (if success then data else {})
-        end
+    if ok and typeof(env) == "table" then
+        return env.ObsidianCompat or env.MoonHubCompat
     end
+
+    return nil
+end
+
+local Compat = GetCompat()
+
+local function safeCall(fn, ...)
+    if typeof(fn) ~= "function" then
+        return false, "not a function"
+    end
+
+    local results = table.pack(pcall(fn, ...))
+    if not results[1] then
+        return false, tostring(results[2])
+    end
+
+    return true, table.unpack(results, 2, results.n)
+end
+
+local function fsIsFolder(path)
+    if Compat and typeof(Compat.isFolder) == "function" then
+        return Compat.isFolder(path)
+    end
+    if typeof(isfolder) ~= "function" then
+        return false, "isfolder unavailable"
+    end
+
+    local ok, result = safeCall(isfolder, path)
+    if not ok then
+        return false, result
+    end
+
+    return result == true
+end
+
+local function fsIsFile(path)
+    if Compat and typeof(Compat.isFile) == "function" then
+        return Compat.isFile(path)
+    end
+    if typeof(isfile) ~= "function" then
+        return false, "isfile unavailable"
+    end
+
+    local ok, result = safeCall(isfile, path)
+    if not ok then
+        return false, result
+    end
+
+    return result == true
+end
+
+local function fsMakeFolder(path)
+    if Compat and typeof(Compat.makeFolder) == "function" then
+        return Compat.makeFolder(path)
+    end
+    if typeof(makefolder) ~= "function" then
+        return false, "makefolder unavailable"
+    end
+
+    return safeCall(makefolder, path)
+end
+
+local function fsReadFile(path)
+    if Compat and typeof(Compat.readFile) == "function" then
+        return Compat.readFile(path)
+    end
+    if typeof(readfile) ~= "function" then
+        return false, "readfile unavailable"
+    end
+
+    return safeCall(readfile, path)
+end
+
+local function fsWriteFile(path, content)
+    if Compat and typeof(Compat.writeFile) == "function" then
+        return Compat.writeFile(path, content)
+    end
+    if typeof(writefile) ~= "function" then
+        return false, "writefile unavailable"
+    end
+
+    return safeCall(writefile, path, content)
+end
+
+local function fsListFiles(path)
+    if Compat and typeof(Compat.listFiles) == "function" then
+        return Compat.listFiles(path)
+    end
+    if typeof(listfiles) ~= "function" then
+        return false, "listfiles unavailable"
+    end
+
+    return safeCall(listfiles, path)
+end
+
+local function fsDeleteFile(path)
+    if Compat and typeof(Compat.deleteFile) == "function" then
+        return Compat.deleteFile(path)
+    end
+    if typeof(delfile) ~= "function" then
+        return false, "delfile unavailable"
+    end
+
+    return safeCall(delfile, path)
+end
+
+local function compatWait(seconds)
+    if Compat and typeof(Compat.wait) == "function" then
+        return Compat.wait(seconds)
+    end
+    if typeof(task) == "table" and typeof(task.wait) == "function" then
+        return task.wait(seconds)
+    elseif typeof(wait) == "function" then
+        return wait(seconds)
+    end
+
+    return 0
 end
 
 local ThemeManager = {}
@@ -47,7 +143,6 @@ do
     end
 
     ThemeManager.Folder = "ObsidianLibSettings"
-    -- if not isfolder(ThemeManager.Folder) then makefolder(ThemeManager.Folder) end
 
     ThemeManager.Library = nil
     ThemeManager.AppliedToTab = false
@@ -55,143 +150,404 @@ do
     ThemeManager.BuiltInThemes = {
         ["Default"] = {
             1,
-            { FontColor = "ffffff", MainColor = "191919", AccentColor = "7d55ff", BackgroundColor = "0f0f0f", OutlineColor = "282828" },
+            {
+                FontColor = "ffffff",
+                MainColor = "191919",
+                AccentColor = "7d55ff",
+                BackgroundColor = "0f0f0f",
+                OutlineColor = "282828",
+            },
         },
         ["BBot"] = {
             2,
-            { FontColor = "ffffff", MainColor = "1e1e1e", AccentColor = "7e48a3", BackgroundColor = "232323", OutlineColor = "141414" },
+            {
+                FontColor = "ffffff",
+                MainColor = "1e1e1e",
+                AccentColor = "7e48a3",
+                BackgroundColor = "232323",
+                OutlineColor = "141414",
+            },
         },
         ["Fatality"] = {
             3,
-            { FontColor = "ffffff", MainColor = "1e1842", AccentColor = "c50754", BackgroundColor = "191335", OutlineColor = "3c355d" },
+            {
+                FontColor = "ffffff",
+                MainColor = "1e1842",
+                AccentColor = "c50754",
+                BackgroundColor = "191335",
+                OutlineColor = "3c355d",
+            },
         },
         ["Jester"] = {
             4,
-            { FontColor = "ffffff", MainColor = "242424", AccentColor = "db4467", BackgroundColor = "1c1c1c", OutlineColor = "373737" },
+            {
+                FontColor = "ffffff",
+                MainColor = "242424",
+                AccentColor = "db4467",
+                BackgroundColor = "1c1c1c",
+                OutlineColor = "373737",
+            },
         },
         ["Mint"] = {
             5,
-            { FontColor = "ffffff", MainColor = "242424", AccentColor = "3db488", BackgroundColor = "1c1c1c", OutlineColor = "373737" },
+            {
+                FontColor = "ffffff",
+                MainColor = "242424",
+                AccentColor = "3db488",
+                BackgroundColor = "1c1c1c",
+                OutlineColor = "373737",
+            },
         },
         ["Tokyo Night"] = {
             6,
-            { FontColor = "ffffff", MainColor = "191925", AccentColor = "6759b3", BackgroundColor = "16161f", OutlineColor = "323232" },
+            {
+                FontColor = "ffffff",
+                MainColor = "191925",
+                AccentColor = "6759b3",
+                BackgroundColor = "16161f",
+                OutlineColor = "323232",
+            },
         },
         ["Ubuntu"] = {
             7,
-            { FontColor = "ffffff", MainColor = "3e3e3e", AccentColor = "e2581e", BackgroundColor = "323232", OutlineColor = "191919" },
+            {
+                FontColor = "ffffff",
+                MainColor = "3e3e3e",
+                AccentColor = "e2581e",
+                BackgroundColor = "323232",
+                OutlineColor = "191919",
+            },
         },
         ["Quartz"] = {
             8,
-            { FontColor = "ffffff", MainColor = "232330", AccentColor = "426e87", BackgroundColor = "1d1b26", OutlineColor = "27232f" },
+            {
+                FontColor = "ffffff",
+                MainColor = "232330",
+                AccentColor = "426e87",
+                BackgroundColor = "1d1b26",
+                OutlineColor = "27232f",
+            },
         },
         ["Nord"] = {
             9,
-            { FontColor = "eceff4", MainColor = "3b4252", AccentColor = "88c0d0", BackgroundColor = "2e3440", OutlineColor = "4c566a" },
+            {
+                FontColor = "eceff4",
+                MainColor = "3b4252",
+                AccentColor = "88c0d0",
+                BackgroundColor = "2e3440",
+                OutlineColor = "4c566a",
+            },
         },
         ["Dracula"] = {
             10,
-            { FontColor = "f8f8f2", MainColor = "44475a", AccentColor = "ff79c6", BackgroundColor = "282a36", OutlineColor = "6272a4" },
+            {
+                FontColor = "f8f8f2",
+                MainColor = "44475a",
+                AccentColor = "ff79c6",
+                BackgroundColor = "282a36",
+                OutlineColor = "6272a4",
+            },
         },
         ["Monokai"] = {
             11,
-            { FontColor = "f8f8f2", MainColor = "272822", AccentColor = "f92672", BackgroundColor = "1e1f1c", OutlineColor = "49483e" },
+            {
+                FontColor = "f8f8f2",
+                MainColor = "272822",
+                AccentColor = "f92672",
+                BackgroundColor = "1e1f1c",
+                OutlineColor = "49483e",
+            },
         },
         ["Gruvbox"] = {
             12,
-            { FontColor = "ebdbb2", MainColor = "3c3836", AccentColor = "fb4934", BackgroundColor = "282828", OutlineColor = "504945" },
+            {
+                FontColor = "ebdbb2",
+                MainColor = "3c3836",
+                AccentColor = "fb4934",
+                BackgroundColor = "282828",
+                OutlineColor = "504945",
+            },
         },
         ["Solarized"] = {
             13,
-            { FontColor = "839496", MainColor = "073642", AccentColor = "cb4b16", BackgroundColor = "002b36", OutlineColor = "586e75" },
+            {
+                FontColor = "839496",
+                MainColor = "073642",
+                AccentColor = "cb4b16",
+                BackgroundColor = "002b36",
+                OutlineColor = "586e75",
+            },
         },
         ["Catppuccin"] = {
             14,
-            { FontColor = "d9e0ee", MainColor = "302d41", AccentColor = "f5c2e7", BackgroundColor = "1e1e2e", OutlineColor = "575268" },
+            {
+                FontColor = "d9e0ee",
+                MainColor = "302d41",
+                AccentColor = "f5c2e7",
+                BackgroundColor = "1e1e2e",
+                OutlineColor = "575268",
+            },
         },
         ["One Dark"] = {
             15,
-            { FontColor = "abb2bf", MainColor = "282c34", AccentColor = "c678dd", BackgroundColor = "21252b", OutlineColor = "5c6370" },
+            {
+                FontColor = "abb2bf",
+                MainColor = "282c34",
+                AccentColor = "c678dd",
+                BackgroundColor = "21252b",
+                OutlineColor = "5c6370",
+            },
         },
         ["Cyberpunk"] = {
             16,
-            { FontColor = "f9f9f9", MainColor = "262335", AccentColor = "00ff9f", BackgroundColor = "1a1a2e", OutlineColor = "413c5e" },
+            {
+                FontColor = "f9f9f9",
+                MainColor = "262335",
+                AccentColor = "00ff9f",
+                BackgroundColor = "1a1a2e",
+                OutlineColor = "413c5e",
+            },
         },
         ["Oceanic Next"] = {
             17,
-            { FontColor = "d8dee9", MainColor = "1b2b34", AccentColor = "6699cc", BackgroundColor = "16232a", OutlineColor = "343d46" },
+            {
+                FontColor = "d8dee9",
+                MainColor = "1b2b34",
+                AccentColor = "6699cc",
+                BackgroundColor = "16232a",
+                OutlineColor = "343d46",
+            },
         },
         ["Material"] = {
             18,
-            { FontColor = "eeffff", MainColor = "212121", AccentColor = "82aaff", BackgroundColor = "151515", OutlineColor = "424242" },
+            {
+                FontColor = "eeffff",
+                MainColor = "212121",
+                AccentColor = "82aaff",
+                BackgroundColor = "151515",
+                OutlineColor = "424242",
+            },
         },
         ["Gradient Violet Storm"] = {
             19,
-            { FontColor = "ffffff", MainColor = "21182f", AccentColor = "9b5cff", BackgroundColor = "100b1a", OutlineColor = "4d3a73", GradientColor1 = "9b5cff", GradientColor2 = "120c28", GradientRotation = 35 },
+            {
+                FontColor = "ffffff",
+                MainColor = "21182f",
+                AccentColor = "9b5cff",
+                BackgroundColor = "100b1a",
+                OutlineColor = "4d3a73",
+                GradientColor1 = "9b5cff",
+                GradientColor2 = "120c28",
+                GradientRotation = 35,
+            },
         },
         ["Gradient Aurora"] = {
             20,
-            { FontColor = "f4fff8", MainColor = "102522", AccentColor = "42f5b3", BackgroundColor = "071514", OutlineColor = "236b62", GradientColor1 = "42f5b3", GradientColor2 = "2d7dff", GradientRotation = 25 },
+            {
+                FontColor = "f4fff8",
+                MainColor = "102522",
+                AccentColor = "42f5b3",
+                BackgroundColor = "071514",
+                OutlineColor = "236b62",
+                GradientColor1 = "42f5b3",
+                GradientColor2 = "2d7dff",
+                GradientRotation = 25,
+            },
         },
         ["Gradient Sunset"] = {
             21,
-            { FontColor = "fff8f0", MainColor = "2b181d", AccentColor = "ff8a5b", BackgroundColor = "140b12", OutlineColor = "704057", GradientColor1 = "ff8a5b", GradientColor2 = "a855f7", GradientRotation = 32 },
+            {
+                FontColor = "fff8f0",
+                MainColor = "2b181d",
+                AccentColor = "ff8a5b",
+                BackgroundColor = "140b12",
+                OutlineColor = "704057",
+                GradientColor1 = "ff8a5b",
+                GradientColor2 = "a855f7",
+                GradientRotation = 32,
+            },
         },
         ["Gradient Ocean"] = {
             22,
-            { FontColor = "eaf8ff", MainColor = "102033", AccentColor = "38bdf8", BackgroundColor = "07111f", OutlineColor = "24577a", GradientColor1 = "38bdf8", GradientColor2 = "2563eb", GradientRotation = 42 },
+            {
+                FontColor = "eaf8ff",
+                MainColor = "102033",
+                AccentColor = "38bdf8",
+                BackgroundColor = "07111f",
+                OutlineColor = "24577a",
+                GradientColor1 = "38bdf8",
+                GradientColor2 = "2563eb",
+                GradientRotation = 42,
+            },
         },
         ["Gradient Emerald"] = {
             23,
-            { FontColor = "ecfdf5", MainColor = "12261d", AccentColor = "34d399", BackgroundColor = "08150f", OutlineColor = "27694b", GradientColor1 = "34d399", GradientColor2 = "0f766e", GradientRotation = 28 },
+            {
+                FontColor = "ecfdf5",
+                MainColor = "12261d",
+                AccentColor = "34d399",
+                BackgroundColor = "08150f",
+                OutlineColor = "27694b",
+                GradientColor1 = "34d399",
+                GradientColor2 = "0f766e",
+                GradientRotation = 28,
+            },
         },
         ["Gradient Crimson"] = {
             24,
-            { FontColor = "fff1f2", MainColor = "2a1418", AccentColor = "fb7185", BackgroundColor = "13070a", OutlineColor = "74323e", GradientColor1 = "fb7185", GradientColor2 = "dc2626", GradientRotation = 38 },
+            {
+                FontColor = "fff1f2",
+                MainColor = "2a1418",
+                AccentColor = "fb7185",
+                BackgroundColor = "13070a",
+                OutlineColor = "74323e",
+                GradientColor1 = "fb7185",
+                GradientColor2 = "dc2626",
+                GradientRotation = 38,
+            },
         },
         ["Gradient Cyber Lime"] = {
             25,
-            { FontColor = "f7ffe5", MainColor = "1c2513", AccentColor = "a3e635", BackgroundColor = "0c1208", OutlineColor = "556f20", GradientColor1 = "a3e635", GradientColor2 = "06b6d4", GradientRotation = 20 },
+            {
+                FontColor = "f7ffe5",
+                MainColor = "1c2513",
+                AccentColor = "a3e635",
+                BackgroundColor = "0c1208",
+                OutlineColor = "556f20",
+                GradientColor1 = "a3e635",
+                GradientColor2 = "06b6d4",
+                GradientRotation = 20,
+            },
         },
         ["Gradient Sakura"] = {
             26,
-            { FontColor = "fff7fb", MainColor = "2d1b27", AccentColor = "f9a8d4", BackgroundColor = "140b12", OutlineColor = "7a4562", GradientColor1 = "f9a8d4", GradientColor2 = "f472b6", GradientRotation = 34 },
+            {
+                FontColor = "fff7fb",
+                MainColor = "2d1b27",
+                AccentColor = "f9a8d4",
+                BackgroundColor = "140b12",
+                OutlineColor = "7a4562",
+                GradientColor1 = "f9a8d4",
+                GradientColor2 = "f472b6",
+                GradientRotation = 34,
+            },
         },
         ["Gradient Royal"] = {
             27,
-            { FontColor = "f5f3ff", MainColor = "1d1b35", AccentColor = "8b5cf6", BackgroundColor = "0e0b1f", OutlineColor = "5546a0", GradientColor1 = "8b5cf6", GradientColor2 = "3b82f6", GradientRotation = 45 },
+            {
+                FontColor = "f5f3ff",
+                MainColor = "1d1b35",
+                AccentColor = "8b5cf6",
+                BackgroundColor = "0e0b1f",
+                OutlineColor = "5546a0",
+                GradientColor1 = "8b5cf6",
+                GradientColor2 = "3b82f6",
+                GradientRotation = 45,
+            },
         },
         ["Gradient Ice"] = {
             28,
-            { FontColor = "f8fbff", MainColor = "172435", AccentColor = "93c5fd", BackgroundColor = "0b1320", OutlineColor = "496987", GradientColor1 = "93c5fd", GradientColor2 = "67e8f9", GradientRotation = 18 },
+            {
+                FontColor = "f8fbff",
+                MainColor = "172435",
+                AccentColor = "93c5fd",
+                BackgroundColor = "0b1320",
+                OutlineColor = "496987",
+                GradientColor1 = "93c5fd",
+                GradientColor2 = "67e8f9",
+                GradientRotation = 18,
+            },
         },
         ["Gradient Amber"] = {
             29,
-            { FontColor = "fffbeb", MainColor = "2b2112", AccentColor = "f59e0b", BackgroundColor = "151006", OutlineColor = "72501d", GradientColor1 = "f59e0b", GradientColor2 = "ef4444", GradientRotation = 30 },
+            {
+                FontColor = "fffbeb",
+                MainColor = "2b2112",
+                AccentColor = "f59e0b",
+                BackgroundColor = "151006",
+                OutlineColor = "72501d",
+                GradientColor1 = "f59e0b",
+                GradientColor2 = "ef4444",
+                GradientRotation = 30,
+            },
         },
         ["Gradient Matrix"] = {
             30,
-            { FontColor = "dcfce7", MainColor = "101c12", AccentColor = "22c55e", BackgroundColor = "050c07", OutlineColor = "276749", GradientColor1 = "22c55e", GradientColor2 = "14532d", GradientRotation = 22 },
+            {
+                FontColor = "dcfce7",
+                MainColor = "101c12",
+                AccentColor = "22c55e",
+                BackgroundColor = "050c07",
+                OutlineColor = "276749",
+                GradientColor1 = "22c55e",
+                GradientColor2 = "14532d",
+                GradientRotation = 22,
+            },
         },
         ["Gradient Galaxy"] = {
             31,
-            { FontColor = "f5f5ff", MainColor = "1b1734", AccentColor = "c084fc", BackgroundColor = "090819", OutlineColor = "53427a", GradientColor1 = "c084fc", GradientColor2 = "312e81", GradientRotation = 48 },
+            {
+                FontColor = "f5f5ff",
+                MainColor = "1b1734",
+                AccentColor = "c084fc",
+                BackgroundColor = "090819",
+                OutlineColor = "53427a",
+                GradientColor1 = "c084fc",
+                GradientColor2 = "312e81",
+                GradientRotation = 48,
+            },
         },
         ["Gradient Lava"] = {
             32,
-            { FontColor = "fff7ed", MainColor = "2c1910", AccentColor = "fb923c", BackgroundColor = "160a05", OutlineColor = "7c3a17", GradientColor1 = "fb923c", GradientColor2 = "b91c1c", GradientRotation = 36 },
+            {
+                FontColor = "fff7ed",
+                MainColor = "2c1910",
+                AccentColor = "fb923c",
+                BackgroundColor = "160a05",
+                OutlineColor = "7c3a17",
+                GradientColor1 = "fb923c",
+                GradientColor2 = "b91c1c",
+                GradientRotation = 36,
+            },
         },
         ["Gradient Minty"] = {
             33,
-            { FontColor = "f0fdfa", MainColor = "13221f", AccentColor = "5eead4", BackgroundColor = "071311", OutlineColor = "2b7169", GradientColor1 = "5eead4", GradientColor2 = "14b8a6", GradientRotation = 26 },
+            {
+                FontColor = "f0fdfa",
+                MainColor = "13221f",
+                AccentColor = "5eead4",
+                BackgroundColor = "071311",
+                OutlineColor = "2b7169",
+                GradientColor1 = "5eead4",
+                GradientColor2 = "14b8a6",
+                GradientRotation = 26,
+            },
         },
         ["Gradient Candy"] = {
             34,
-            { FontColor = "fff7ff", MainColor = "29172a", AccentColor = "f0abfc", BackgroundColor = "130812", OutlineColor = "7a3f7d", GradientColor1 = "f0abfc", GradientColor2 = "fb7185", GradientRotation = 40 },
+            {
+                FontColor = "fff7ff",
+                MainColor = "29172a",
+                AccentColor = "f0abfc",
+                BackgroundColor = "130812",
+                OutlineColor = "7a3f7d",
+                GradientColor1 = "f0abfc",
+                GradientColor2 = "fb7185",
+                GradientRotation = 40,
+            },
         },
         ["Gradient Midnight"] = {
             35,
-            { FontColor = "e0f2fe", MainColor = "111827", AccentColor = "60a5fa", BackgroundColor = "030712", OutlineColor = "334155", GradientColor1 = "60a5fa", GradientColor2 = "7c3aed", GradientRotation = 46 },
+            {
+                FontColor = "e0f2fe",
+                MainColor = "111827",
+                AccentColor = "60a5fa",
+                BackgroundColor = "030712",
+                OutlineColor = "334155",
+                GradientColor1 = "60a5fa",
+                GradientColor2 = "7c3aed",
+                GradientRotation = 46,
+            },
         },
     }
 
@@ -226,8 +582,12 @@ do
             return nil
         end
 
-        local FromColor = ColorFromHex(Scheme.GradientColor1 or Scheme.GradientFromColor or Scheme.AccentColor, Scheme.AccentColor)
-        local ToColor = ColorFromHex(Scheme.GradientColor2 or Scheme.GradientToColor or Scheme.BackgroundColor, Scheme.BackgroundColor)
+        local FromColor =
+            ColorFromHex(Scheme.GradientColor1 or Scheme.GradientFromColor or Scheme.AccentColor, Scheme.AccentColor)
+        local ToColor = ColorFromHex(
+            Scheme.GradientColor2 or Scheme.GradientToColor or Scheme.BackgroundColor,
+            Scheme.BackgroundColor
+        )
         local StartTransparency = Preview and 0.05
             or NumberFrom(Scheme.GradientTransparencyStart or Scheme.GradientTransparency0, 0.84)
         local EndTransparency = Preview and 0.32
@@ -251,7 +611,11 @@ do
 
         return {
             Text = Name,
-            Description = string.format("Accent #%s / Main #%s", CleanHex(Scheme.AccentColor), CleanHex(Scheme.MainColor)),
+            Description = string.format(
+                "Accent #%s / Main #%s",
+                CleanHex(Scheme.AccentColor),
+                CleanHex(Scheme.MainColor)
+            ),
             Icon = "paintbrush",
             BottomBarTransparency = 0.16,
             StrokeColor = ColorFromHex(Scheme.AccentColor, "7d55ff"),
@@ -297,25 +661,37 @@ do
 
         for i = 1, #paths do
             local str = paths[i]
-            if isfolder(str) then
+            local exists, existsError = fsIsFolder(str)
+            if exists then
                 continue
             end
-            makefolder(str)
+
+            local success, errorMessage = fsMakeFolder(str)
+            if not success then
+                return false, existsError or errorMessage or "failed to create folder"
+            end
         end
+
+        return true
     end
 
     function ThemeManager:CheckFolderTree()
-        if isfolder(self.Folder) then
-            return
+        if fsIsFolder(self.Folder) then
+            return true
         end
-        self:BuildFolderTree()
 
-        task.wait(0.1)
+        local success, errorMessage = self:BuildFolderTree()
+        if not success then
+            return false, errorMessage
+        end
+
+        compatWait(0.1)
+        return true
     end
 
     function ThemeManager:SetFolder(folder)
         self.Folder = folder
-        self:BuildFolderTree()
+        return self:BuildFolderTree()
     end
 
     --// Apply, Update theme \\--
@@ -372,11 +748,15 @@ do
     --// Get, Load, Save, Delete, Refresh \\--
     function ThemeManager:GetCustomTheme(file)
         local path = self.Folder .. "/themes/" .. file .. ".json"
-        if not isfile(path) then
+        if not fsIsFile(path) then
             return nil
         end
 
-        local data = readfile(path)
+        local readSuccess, data = fsReadFile(path)
+        if not readSuccess then
+            return nil
+        end
+
         local success, decoded = pcall(HttpService.JSONDecode, HttpService, data)
 
         if not success then
@@ -388,7 +768,13 @@ do
 
     function ThemeManager:LoadDefault()
         local theme = "Default"
-        local content = isfile(self.Folder .. "/themes/default.txt") and readfile(self.Folder .. "/themes/default.txt")
+        local content
+        if fsIsFile(self.Folder .. "/themes/default.txt") then
+            local readSuccess, data = fsReadFile(self.Folder .. "/themes/default.txt")
+            if readSuccess then
+                content = data
+            end
+        end
 
         local isDefault = true
         if content then
@@ -410,7 +796,17 @@ do
     end
 
     function ThemeManager:SaveDefault(theme)
-        writefile(self.Folder .. "/themes/default.txt", theme)
+        local treeSuccess, treeError = self:CheckFolderTree()
+        if not treeSuccess then
+            return false, "filesystem unavailable: " .. tostring(treeError)
+        end
+
+        local success, errorMessage = fsWriteFile(self.Folder .. "/themes/default.txt", theme)
+        if not success then
+            return false, "write file error: " .. tostring(errorMessage)
+        end
+
+        return true
     end
 
     function ThemeManager:SetDefaultTheme(theme)
@@ -423,11 +819,9 @@ do
             if typeof(theme[field]) == "Color3" then
                 FinalTheme[field] = "#" .. theme[field]:ToHex()
                 LibraryScheme[field] = theme[field]
-
             elseif typeof(theme[field]) == "string" then
                 FinalTheme[field] = if theme[field]:sub(1, 1) == "#" then theme[field] else ("#" .. theme[field])
                 LibraryScheme[field] = Color3.fromHex(theme[field])
-
             else
                 FinalTheme[field] = ThemeManager.BuiltInThemes["Default"][2][field]
                 LibraryScheme[field] = Color3.fromHex(ThemeManager.BuiltInThemes["Default"][2][field])
@@ -437,11 +831,9 @@ do
         if typeof(theme["FontFace"]) == "EnumItem" then
             FinalTheme["FontFace"] = theme["FontFace"].Name
             LibraryScheme["Font"] = Font.fromEnum(theme["FontFace"])
-
         elseif typeof(theme["FontFace"]) == "string" then
             FinalTheme["FontFace"] = theme["FontFace"]
             LibraryScheme["Font"] = Font.fromEnum(Enum.Font[theme["FontFace"]])
-
         else
             FinalTheme["FontFace"] = "Code"
             LibraryScheme["Font"] = Font.fromEnum(Enum.Font.Code)
@@ -460,7 +852,12 @@ do
     function ThemeManager:SaveCustomTheme(file)
         if file:gsub(" ", "") == "" then
             self.Library:Notify("Invalid file name for theme (empty)", 3)
-            return
+            return false, "invalid file name"
+        end
+
+        local treeSuccess, treeError = self:CheckFolderTree()
+        if not treeSuccess then
+            return false, "filesystem unavailable: " .. tostring(treeError)
         end
 
         local theme = {}
@@ -469,7 +866,17 @@ do
         end
         theme["FontFace"] = self.Library.Options["FontFace"].Value
 
-        writefile(self.Folder .. "/themes/" .. file .. ".json", HttpService:JSONEncode(theme))
+        local encodeSuccess, encoded = pcall(HttpService.JSONEncode, HttpService, theme)
+        if not encodeSuccess then
+            return false, "failed to encode theme"
+        end
+
+        local writeSuccess, writeError = fsWriteFile(self.Folder .. "/themes/" .. file .. ".json", encoded)
+        if not writeSuccess then
+            return false, "write file error: " .. tostring(writeError)
+        end
+
+        return true
     end
 
     function ThemeManager:Delete(name)
@@ -478,20 +885,24 @@ do
         end
 
         local file = self.Folder .. "/themes/" .. name .. ".json"
-        if not isfile(file) then
-            return false, "invalid file"
+        local fileExists, fileError = fsIsFile(file)
+        if not fileExists then
+            return false, fileError or "invalid file"
         end
 
-        local success = pcall(delfile, file)
+        local success, deleteError = fsDeleteFile(file)
         if not success then
-            return false, "delete file error"
+            return false, "delete file error: " .. tostring(deleteError)
         end
 
         return true
     end
 
     function ThemeManager:ReloadCustomThemes()
-        local list = listfiles(self.Folder .. "/themes")
+        local success, list = fsListFiles(self.Folder .. "/themes")
+        if not success or typeof(list) ~= "table" then
+            return {}
+        end
 
         local out = {}
         for i = 1, #list do
@@ -561,7 +972,12 @@ do
             Cards = ThemeCards,
         })
         groupbox:AddButton("Set as default", function()
-            self:SaveDefault(self.Library.Options.ThemeManager_ThemeList.Value)
+            local success, err = self:SaveDefault(self.Library.Options.ThemeManager_ThemeList.Value)
+            if not success then
+                self.Library:Notify("Failed to set default theme: " .. tostring(err))
+                return
+            end
+
             self.Library:Notify(
                 string.format("Set default theme to %q", self.Library.Options.ThemeManager_ThemeList.Value)
             )
@@ -582,7 +998,11 @@ do
                 return
             end
 
-            self:SaveCustomTheme(name)
+            local success, err = self:SaveCustomTheme(name)
+            if not success then
+                self.Library:Notify("Failed to create theme: " .. tostring(err))
+                return
+            end
 
             self.Library:Notify(string.format("Created theme %q", name))
             self.Library.Options.ThemeManager_CustomThemeList:SetValues(self:ReloadCustomThemes())
@@ -604,7 +1024,12 @@ do
         groupbox:AddButton("Overwrite theme", function()
             local name = self.Library.Options.ThemeManager_CustomThemeList.Value
 
-            self:SaveCustomTheme(name)
+            local success, err = self:SaveCustomTheme(name)
+            if not success then
+                self.Library:Notify("Failed to overwrite theme: " .. tostring(err))
+                return
+            end
+
             self.Library:Notify(string.format("Overwrote config %q", name))
         end)
         groupbox:AddButton("Delete theme", function()
@@ -629,16 +1054,21 @@ do
                 self.Library.Options.ThemeManager_CustomThemeList.Value ~= nil
                 and self.Library.Options.ThemeManager_CustomThemeList.Value ~= ""
             then
-                self:SaveDefault(self.Library.Options.ThemeManager_CustomThemeList.Value)
+                local success, err = self:SaveDefault(self.Library.Options.ThemeManager_CustomThemeList.Value)
+                if not success then
+                    self.Library:Notify("Failed to set default theme: " .. tostring(err))
+                    return
+                end
+
                 self.Library:Notify(
                     string.format("Set default theme to %q", self.Library.Options.ThemeManager_CustomThemeList.Value)
                 )
             end
         end)
         groupbox:AddButton("Reset default", function()
-            local success = pcall(delfile, self.Folder .. "/themes/default.txt")
+            local success, err = fsDeleteFile(self.Folder .. "/themes/default.txt")
             if not success then
-                self.Library:Notify("Failed to reset default: delete file error")
+                self.Library:Notify("Failed to reset default: " .. tostring(err))
                 return
             end
 
@@ -684,5 +1114,15 @@ do
     ThemeManager:BuildFolderTree()
 end
 
-getgenv().ObsidianThemeManager = ThemeManager
+local okEnv, env = pcall(function()
+    if Compat and typeof(Compat.getGlobalEnv) == "function" then
+        return Compat.getGlobalEnv()
+    elseif typeof(getgenv) == "function" then
+        return getgenv()
+    end
+    return _G
+end)
+if okEnv and typeof(env) == "table" then
+    env.ObsidianThemeManager = ThemeManager
+end
 return ThemeManager
