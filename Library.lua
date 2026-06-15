@@ -13523,14 +13523,20 @@ function Library:CreateWindow(WindowInfo)
             --// Tab Container \\--
             TabContainer = New("Frame", {
                 BackgroundTransparency = 1,
+                ClipsDescendants = true,
                 Size = UDim2.fromScale(1, 1),
                 Visible = false,
                 Parent = Container,
             })
 
-            TabFull = New("Frame", {
+            TabFull = New("ScrollingFrame", {
+                AutomaticCanvasSize = Enum.AutomaticSize.Y,
                 BackgroundTransparency = 1,
+                CanvasSize = UDim2.fromScale(0, 0),
                 Position = UDim2.fromOffset(0, 0),
+                ScrollBarImageTransparency = 0.45,
+                ScrollBarThickness = 0,
+                ScrollingDirection = Enum.ScrollingDirection.Y,
                 Size = UDim2.new(1, 0, 0, 0),
                 Visible = false,
                 Parent = TabContainer,
@@ -13819,12 +13825,16 @@ function Library:CreateWindow(WindowInfo)
 
         function Tab:RefreshSides()
             local WarningOffset = WarningBoxHolder.Visible and WarningBox.Size.Y.Offset + 8 or 0
-            local FullHeight = HasFullContent and (TabFullList.AbsoluteContentSize.Y / Library.DPIScale) + 4 or 0
+            local RawFullHeight = HasFullContent and (TabFullList.AbsoluteContentSize.Y / Library.DPIScale) + 4 or 0
+            local AvailableHeight = math.max(0, TabContainer.AbsoluteSize.Y / Library.DPIScale)
+            local MaxFullHeight = math.max(0, AvailableHeight - WarningOffset)
+            local FullHeight = HasFullContent and math.min(RawFullHeight, MaxFullHeight) or 0
             local Offset = WarningOffset + FullHeight
 
             TabFull.Visible = HasFullContent
             TabFull.Position = UDim2.fromOffset(0, WarningOffset)
             TabFull.Size = UDim2.new(1, 0, 0, FullHeight)
+            TabFull.ScrollBarThickness = RawFullHeight > FullHeight + 1 and 2 or 0
 
             for _, Side in Tab.Sides do
                 Side.Position = UDim2.new(Side.Position.X.Scale, 0, 0, Offset)
