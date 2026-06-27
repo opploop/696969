@@ -5,18 +5,34 @@ end)
 local HttpService: HttpService = cloneref(game:GetService("HttpService"))
 
 local function GetCompat()
-    local ok, env = pcall(function()
-        if typeof(getgenv) == "function" then
-            return getgenv()
-        end
-        return _G
-    end)
+    local seen = {}
 
-    if ok and typeof(env) == "table" then
-        return env.ObsidianCompat or env.MoonHubCompat
+    local function scan(env)
+        if typeof(env) ~= "table" or seen[env] then
+            return nil
+        end
+
+        seen[env] = true
+        local obsidianCompat = rawget(env, "ObsidianCompat")
+        local moonHubCompat = rawget(env, "MoonHubCompat")
+        if typeof(obsidianCompat) == "table" then
+            return obsidianCompat
+        elseif typeof(moonHubCompat) == "table" then
+            return moonHubCompat
+        end
     end
 
-    return nil
+    if typeof(getgenv) == "function" then
+        local ok, env = pcall(getgenv)
+        if ok then
+            local compat = scan(env)
+            if compat then
+                return compat
+            end
+        end
+    end
+
+    return scan(shared) or scan(_G)
 end
 
 local Compat = GetCompat()
@@ -708,7 +724,12 @@ do
             if idx == "VideoLink" then
                 continue
             elseif idx == "FontFace" then
-                self.Library:SetFont(Enum.Font[val])
+                local ok, font = pcall(function()
+                    return Enum.Font[val]
+                end)
+                if ok and font then
+                    self.Library:SetFont(font)
+                end
 
                 if self.Library.Options[idx] then
                     self.Library.Options[idx]:SetValue(val)
@@ -747,6 +768,10 @@ do
 
     --// Get, Load, Save, Delete, Refresh \\--
     function ThemeManager:GetCustomTheme(file)
+        if typeof(file) ~= "string" or file == "" then
+            return nil
+        end
+
         local path = self.Folder .. "/themes/" .. file .. ".json"
         if not fsIsFile(path) then
             return nil
@@ -759,7 +784,7 @@ do
 
         local success, decoded = pcall(HttpService.JSONDecode, HttpService, data)
 
-        if not success then
+        if not success or typeof(decoded) ~= "table" then
             return nil
         end
 
@@ -832,8 +857,11 @@ do
             FinalTheme["FontFace"] = theme["FontFace"].Name
             LibraryScheme["Font"] = Font.fromEnum(theme["FontFace"])
         elseif typeof(theme["FontFace"]) == "string" then
-            FinalTheme["FontFace"] = theme["FontFace"]
-            LibraryScheme["Font"] = Font.fromEnum(Enum.Font[theme["FontFace"]])
+            local ok, font = pcall(function()
+                return Enum.Font[theme["FontFace"]]
+            end)
+            FinalTheme["FontFace"] = if ok and font then theme["FontFace"] else "Code"
+            LibraryScheme["Font"] = Font.fromEnum(if ok and font then font else Enum.Font.Code)
         else
             FinalTheme["FontFace"] = "Code"
             LibraryScheme["Font"] = Font.fromEnum(Enum.Font.Code)
@@ -1090,7 +1118,12 @@ do
         self.Library.Options.OutlineColor:OnChanged(UpdateTheme)
         self.Library.Options.FontColor:OnChanged(UpdateTheme)
         self.Library.Options.FontFace:OnChanged(function(Value)
-            self.Library:SetFont(Enum.Font[Value])
+            local ok, font = pcall(function()
+                return Enum.Font[Value]
+            end)
+            if ok and font then
+                self.Library:SetFont(font)
+            end
             self.Library:UpdateColorsUsingRegistry()
         end)
     end

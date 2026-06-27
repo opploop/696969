@@ -13,37 +13,108 @@ local Teams: Teams = cloneref(game:GetService("Teams"))
 local TweenService: TweenService = cloneref(game:GetService("TweenService"))
 local HttpService: HttpService = cloneref(game:GetService("HttpService"))
 
-local getgenv = getgenv or function()
-    return shared
+local function GetFallbackGlobalEnv()
+    if typeof(shared) == "table" then
+        return shared
+    end
+
+    return _G
 end
+
+local getgenv = getgenv or GetFallbackGlobalEnv
 local setclipboard = setclipboard or nil
 local protectgui = protectgui or (syn and syn.protect_gui) or function() end
 local gethui = gethui or function()
     return CoreGui
 end
 
-local function GetCompat()
-    local ok, env = pcall(getgenv)
-    if ok and typeof(env) == "table" then
-        return env.ObsidianCompat or env.MoonHubCompat
+local function ForEachGlobalEnv(Callback)
+    local Seen = {}
+
+    local function Visit(Env)
+        if typeof(Env) ~= "table" or Seen[Env] then
+            return false
+        end
+
+        Seen[Env] = true
+        return Callback(Env) == true
     end
 
-    return nil
+    if typeof(getgenv) == "function" then
+        local Success, Env = pcall(getgenv)
+        if Success and Visit(Env) then
+            return true
+        end
+    end
+
+    if Visit(shared) then
+        return true
+    end
+
+    return Visit(_G)
+end
+
+local function GetCompat()
+    local CompatObject
+
+    ForEachGlobalEnv(function(Env)
+        local ObsidianCompat = rawget(Env, "ObsidianCompat")
+        local MoonHubCompat = rawget(Env, "MoonHubCompat")
+        local Candidate = if typeof(ObsidianCompat) == "table" then ObsidianCompat else MoonHubCompat
+
+        if typeof(Candidate) == "table" then
+            CompatObject = Candidate
+            return true
+        end
+
+        return false
+    end)
+
+    return CompatObject
 end
 
 local Compat = GetCompat()
+local CompatibilityStatus = {
+    Compat = Compat ~= nil,
+    FileAssets = false,
+    UiParent = "unresolved",
+}
+local AssetStatus = {
+    Lazy = true,
+    FileAssets = false,
+    Downloaded = 0,
+    Failed = 0,
+}
+local AssetWarnings = {}
+local AssetWarningKeys = {}
+
+local function RecordAssetWarning(Key, Message)
+    Key = tostring(Key or Message or "asset")
+    Message = tostring(Message or Key)
+
+    if AssetWarningKeys[Key] then
+        return
+    end
+
+    AssetWarningKeys[Key] = true
+    table.insert(AssetWarnings, Message)
+end
 
 local function CompatGetGlobalEnv()
     if Compat and typeof(Compat.getGlobalEnv) == "function" then
-        return Compat.getGlobalEnv()
+        local Success, Env = pcall(Compat.getGlobalEnv)
+        if Success and typeof(Env) == "table" then
+            return Env
+        end
     end
 
-    local ok, env = pcall(getgenv)
-    if ok and typeof(env) == "table" then
-        return env
-    end
+    local Result = _G
+    ForEachGlobalEnv(function(Env)
+        Result = Env
+        return true
+    end)
 
-    return _G
+    return Result
 end
 
 local function CompatHttpGet(Url)
@@ -165,6 +236,9 @@ local function CompatCanUseFileAssets()
         and (typeof(getcustomasset) == "function" or typeof(getsynasset) == "function")
 end
 
+CompatibilityStatus.FileAssets = CompatCanUseFileAssets()
+AssetStatus.FileAssets = CompatibilityStatus.FileAssets
+
 local function CompatSetClipboard(Text)
     if Compat and typeof(Compat.setClipboard) == "function" then
         return Compat.setClipboard(Text)
@@ -179,16 +253,95 @@ end
 
 local function CompatGetUiParent()
     if Compat and typeof(Compat.getUiParent) == "function" then
-        local Success, Parent = Compat.getUiParent()
-        if Success and Parent then
+        local Success, Result, MaybeParent = pcall(Compat.getUiParent)
+        local Parent = if Result == true then MaybeParent else Result
+        if Success and typeof(Parent) == "Instance" then
+            CompatibilityStatus.UiParent = "compat"
             return Parent
         end
     end
 
-    return gethui()
+    if typeof(gethui) == "function" then
+        local Success, Parent = pcall(gethui)
+        if Success and typeof(Parent) == "Instance" then
+            CompatibilityStatus.UiParent = "gethui"
+            return Parent
+        end
+    end
+
+    if typeof(CoreGui) == "Instance" then
+        CompatibilityStatus.UiParent = "CoreGui"
+        return CoreGui
+    end
+
+    local Player = Players.LocalPlayer
+    if Player then
+        local Success, PlayerGui = pcall(function()
+            return Player:WaitForChild("PlayerGui", 5)
+        end)
+        if Success and typeof(PlayerGui) == "Instance" then
+            CompatibilityStatus.UiParent = "PlayerGui"
+            return PlayerGui
+        end
+    end
+
+    error("Obsidian could not resolve a UI parent. gethui, CoreGui, and PlayerGui are unavailable.")
 end
 
-local LocalPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
+local function GetRuntimeOwner()
+    local Token
+
+    ForEachGlobalEnv(function(Env)
+        local Runtime = rawget(Env, "MoonHubTemplateRuntime")
+        if typeof(Runtime) == "table" and Runtime.RunToken ~= nil then
+            Token = tostring(Runtime.RunToken)
+            return true
+        end
+
+        return false
+    end)
+
+    if Token and Token ~= "" then
+        return "MoonHubTemplateRunToken", Token
+    end
+end
+
+local function ApplyRuntimeOwner(Instance)
+    if typeof(Instance) ~= "Instance" then
+        return
+    end
+
+    local AttributeName, Token = GetRuntimeOwner()
+    if AttributeName and Token then
+        pcall(function()
+            Instance:SetAttribute(AttributeName, Token)
+        end)
+    end
+end
+
+local function ResolveLocalPlayer()
+    if Players.LocalPlayer then
+        return Players.LocalPlayer
+    end
+
+    local Started = os.clock()
+    repeat
+        if typeof(task) == "table" and typeof(task.wait) == "function" then
+            task.wait(0.05)
+        elseif typeof(wait) == "function" then
+            wait(0.05)
+        else
+            break
+        end
+    until Players.LocalPlayer or os.clock() - Started >= 5
+
+    return Players.LocalPlayer
+end
+
+local LocalPlayer = ResolveLocalPlayer()
+if not LocalPlayer then
+    error("Obsidian requires Players.LocalPlayer to create UI.")
+end
 local Mouse = cloneref(LocalPlayer:GetMouse())
 
 local Labels = {}
@@ -459,25 +612,52 @@ do
             Id = nil,
         }
 
-        CustomImageManager.DownloadAsset(AssetName, ForceRedownload)
+        if ForceRedownload == true then
+            CustomImageManager.DownloadAsset(AssetName, true)
+        end
+    end
+
+    local function GetAssetFallback(AssetData)
+        local RobloxId = tonumber(AssetData and AssetData.RobloxId)
+        if RobloxId and RobloxId > 0 then
+            return string.format("rbxassetid://%s", tostring(RobloxId))
+        end
+
+        return ""
     end
 
     function CustomImageManager.GetAsset(AssetName: string)
         if not CustomImageManagerAssets[AssetName] then
-            return nil
+            return ""
         end
 
         local AssetData = CustomImageManagerAssets[AssetName]
-        if AssetData.Id then
+        if AssetData.Id ~= nil then
             return AssetData.Id
         end
 
-        local AssetID = string.format("rbxassetid://%s", AssetData.RobloxId)
+        local AssetID = GetAssetFallback(AssetData)
 
-        do
+        if not CompatCanUseFileAssets() then
+            AssetData.Id = AssetID
+            return AssetID
+        end
+
+        local FileExists = CompatIsFile(AssetData.Path)
+        if not FileExists then
+            CustomImageManager.DownloadAsset(AssetName)
+            FileExists = CompatIsFile(AssetData.Path)
+        end
+
+        if FileExists then
             local Success, NewID = CompatGetCustomAsset(AssetData.Path)
             if Success and NewID then
                 AssetID = NewID
+            else
+                RecordAssetWarning(
+                    "customasset:" .. AssetName,
+                    string.format("Custom asset unavailable for %q; using fallback.", AssetName)
+                )
             end
         end
 
@@ -487,8 +667,27 @@ do
 
     function CustomImageManager.DownloadAsset(AssetName: string, ForceRedownload: boolean?)
         local AssetData = CustomImageManagerAssets[AssetName]
+        if not AssetData then
+            return false, "unknown asset"
+        end
+        if ForceRedownload == true then
+            AssetData.Id = nil
+        end
 
-        RecursiveCreatePath(AssetData.Path, true)
+        if not CompatCanUseFileAssets() then
+            RecordAssetWarning(
+                "fileassets:" .. AssetName,
+                string.format("File/custom asset APIs unavailable; using fallback for %q.", AssetName)
+            )
+            return false, "file asset APIs unavailable"
+        end
+
+        local CreatedPath = RecursiveCreatePath(AssetData.Path, true)
+        if not CreatedPath then
+            AssetStatus.Failed += 1
+            RecordAssetWarning("path:" .. AssetName, string.format("Could not create asset path for %q.", AssetName))
+            return false, "failed to create asset path"
+        end
 
         if ForceRedownload ~= true and CompatIsFile(AssetData.Path) then
             return true, nil
@@ -496,14 +695,21 @@ do
 
         local success, body = CompatHttpGet(AssetData.URL)
         if not success then
+            AssetStatus.Failed += 1
+            RecordAssetWarning("http:" .. AssetName, string.format("Could not download asset %q.", AssetName))
             return false, body
         end
 
-        return CompatWriteFile(AssetData.Path, body)
-    end
+        local WriteSuccess, WriteError = CompatWriteFile(AssetData.Path, body)
+        if WriteSuccess then
+            AssetData.Id = nil
+            AssetStatus.Downloaded += 1
+        else
+            AssetStatus.Failed += 1
+            RecordAssetWarning("write:" .. AssetName, string.format("Could not cache asset %q.", AssetName))
+        end
 
-    for AssetName, _ in CustomImageManagerAssets do
-        CustomImageManager.DownloadAsset(AssetName)
+        return WriteSuccess, WriteError
     end
 end
 
@@ -551,6 +757,11 @@ local function DownloadUrlToCustomAsset(Url: string, Info)
     assert(typeof(Url) == "string", "DownloadUrlAsset expects a URL string.")
     if not IsHttpUrl(Url) then
         return Url, true
+    end
+
+    if not CompatCanUseFileAssets() then
+        RecordAssetWarning("remoteasset:" .. Url, "Remote custom assets require filesystem and custom asset APIs.")
+        return Url, false, "file asset APIs unavailable"
     end
 
     Info = typeof(Info) == "table" and Info or {}
@@ -694,6 +905,9 @@ local Library = {
     ScalesOffset = {},
 
     ImageManager = CustomImageManager,
+    CompatibilityStatus = CompatibilityStatus,
+    AssetStatus = AssetStatus,
+    AssetWarnings = AssetWarnings,
     ShowCursorBinding = string.sub(tostring({}), 10),
 }
 
@@ -1823,7 +2037,10 @@ end
 function Library:DownloadUrlAsset(Url: string, Info)
     local Asset, Success, ErrorMessage = DownloadUrlToCustomAsset(Url, Info)
     if not Success and IsHttpUrl(Url) then
-        warn(string.format("Failed to download custom asset %q: %s", Url, tostring(ErrorMessage)))
+        RecordAssetWarning(
+            "downloadurl:" .. Url,
+            string.format("Failed to download custom asset %q: %s", Url, tostring(ErrorMessage))
+        )
     end
 
     return Asset
@@ -1833,11 +2050,12 @@ function Library:DownloadImage(Url: string, Info)
     if not IsHttpUrl(Url) then
         return Url
     end
+    Info = typeof(Info) == "table" and Info or { FileName = Info }
     if not CompatCanUseFileAssets() then
-        return Url
+        local RobloxAssetId = tonumber(Info.RobloxAssetId)
+        return if RobloxAssetId and RobloxAssetId > 0 then string.format("rbxassetid://%s", tostring(RobloxAssetId)) else ""
     end
 
-    Info = typeof(Info) == "table" and Info or { FileName = Info }
     local FileName = GetUrlFileName(Url, Info.FileName or Info.Name, Info.Extension)
     local AssetName = SanitizeAssetPathSegment(Info.AssetName or ("RemoteImage_" .. HashString(Url) .. "_" .. FileName))
 
@@ -1849,7 +2067,10 @@ function Library:DownloadImage(Url: string, Info)
                 pcall(CustomImageManager.DownloadAsset, AssetName, true)
             end
         else
-            warn(string.format("Failed to register remote image %q: %s", Url, tostring(AddError)))
+            RecordAssetWarning(
+                "remoteimage:" .. Url,
+                string.format("Failed to register remote image %q: %s", Url, tostring(AddError))
+            )
         end
     end
 
@@ -1860,14 +2081,32 @@ function Library:DownloadVideo(Url: string, Info)
     Info = typeof(Info) == "table" and Info or { FileName = Info }
     Info.Folder = Info.Folder or "Obsidian/videos"
     Info.Extension = Info.Extension or "mp4"
-    return Library:DownloadUrlAsset(Url, Info)
+    local Asset, Success, ErrorMessage = DownloadUrlToCustomAsset(Url, Info)
+    if not Success and IsHttpUrl(Url) then
+        RecordAssetWarning(
+            "video:" .. Url,
+            string.format("Failed to load remote video %q: %s", Url, tostring(ErrorMessage))
+        )
+        return ""
+    end
+
+    return Asset
 end
 
 function Library:DownloadSprite(Url: string, Info)
     Info = typeof(Info) == "table" and Info or { FileName = Info }
     Info.Folder = Info.Folder or "Obsidian/sprites"
     Info.Extension = Info.Extension or "png"
-    return Library:DownloadUrlAsset(Url, Info)
+    local Asset, Success, ErrorMessage = DownloadUrlToCustomAsset(Url, Info)
+    if not Success and IsHttpUrl(Url) then
+        RecordAssetWarning(
+            "sprite:" .. Url,
+            string.format("Failed to load remote sprite %q: %s", Url, tostring(ErrorMessage))
+        )
+        return ""
+    end
+
+    return Asset
 end
 
 local CustomFontManager = {}
@@ -2749,6 +2988,8 @@ end
 
 --// Main Instances \\-
 local function SafeParentUI(Instance: Instance, Parent: Instance | () -> Instance)
+    ApplyRuntimeOwner(Instance)
+
     local success, _error = pcall(function()
         if not Parent then
             Parent = CoreGui
@@ -2765,7 +3006,16 @@ local function SafeParentUI(Instance: Instance, Parent: Instance | () -> Instanc
     end)
 
     if not (success and Instance.Parent) then
-        Instance.Parent = Library.LocalPlayer:WaitForChild("PlayerGui", math.huge)
+        local PlayerGui
+        pcall(function()
+            PlayerGui = Library.LocalPlayer and Library.LocalPlayer:WaitForChild("PlayerGui", 5)
+        end)
+
+        if PlayerGui then
+            Instance.Parent = PlayerGui
+        else
+            error("Obsidian could not parent UI safely.")
+        end
     end
 end
 

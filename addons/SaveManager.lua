@@ -5,18 +5,34 @@ end)
 local HttpService: HttpService = cloneref(game:GetService("HttpService"))
 
 local function GetCompat()
-    local ok, env = pcall(function()
-        if typeof(getgenv) == "function" then
-            return getgenv()
-        end
-        return _G
-    end)
+    local seen = {}
 
-    if ok and typeof(env) == "table" then
-        return env.ObsidianCompat or env.MoonHubCompat
+    local function scan(env)
+        if typeof(env) ~= "table" or seen[env] then
+            return nil
+        end
+
+        seen[env] = true
+        local obsidianCompat = rawget(env, "ObsidianCompat")
+        local moonHubCompat = rawget(env, "MoonHubCompat")
+        if typeof(obsidianCompat) == "table" then
+            return obsidianCompat
+        elseif typeof(moonHubCompat) == "table" then
+            return moonHubCompat
+        end
     end
 
-    return nil
+    if typeof(getgenv) == "function" then
+        local ok, env = pcall(getgenv)
+        if ok then
+            local compat = scan(env)
+            if compat then
+                return compat
+            end
+        end
+    end
+
+    return scan(shared) or scan(_G)
 end
 
 local Compat = GetCompat()
@@ -123,21 +139,21 @@ end
 
 local function compatSpawn(fn, ...)
     local args = table.pack(...)
-    if Compat and typeof(Compat.spawn) == "function" then
-        return Compat.spawn(function()
-            fn(table.unpack(args, 1, args.n))
-        end)
-    end
-    if typeof(task) == "table" and typeof(task.spawn) == "function" then
-        return true, task.spawn(fn, table.unpack(args, 1, args.n))
-    end
-    if typeof(spawn) == "function" then
-        return true, spawn(function()
-            fn(table.unpack(args, 1, args.n))
-        end)
+    local function run()
+        return safeCall(fn, table.unpack(args, 1, args.n))
     end
 
-    return safeCall(fn, table.unpack(args, 1, args.n))
+    if Compat and typeof(Compat.spawn) == "function" then
+        return Compat.spawn(run)
+    end
+    if typeof(task) == "table" and typeof(task.spawn) == "function" then
+        return true, task.spawn(run)
+    end
+    if typeof(spawn) == "function" then
+        return true, spawn(run)
+    end
+
+    return run()
 end
 
 local function compatWait(seconds)
@@ -450,6 +466,9 @@ do
         if not success then
             return false, "decode error"
         end
+        if typeof(decoded) ~= "table" or typeof(decoded.objects) ~= "table" then
+            return false, "invalid config data"
+        end
 
         if self.UseLoadingOrder == true and typeof(self.LoadingOrder) == "table" then
             table.sort(decoded.objects, function(a, b)
@@ -510,13 +529,13 @@ do
                 local listSuccess
                 listSuccess, list = fsListFiles(self.Folder .. "/settings/" .. self.SubFolder)
                 if not listSuccess then
-                    error(list)
+                    return {}
                 end
             else
                 local listSuccess
                 listSuccess, list = fsListFiles(self.Folder .. "/settings")
                 if not listSuccess then
-                    error(list)
+                    return {}
                 end
             end
             if typeof(list) ~= "table" then

@@ -1131,22 +1131,20 @@ export type BaseGroupbox = {
     AddButton: (self: Groupbox, Info: ButtonInfo | string, Func: (() -> ())?, Idx: string?) -> Button,
     AddCustomFontLabel: (
         self: Groupbox,
-        Info:
-            | {
-                Text: string?,
-                Font: CustomFont?,
-                Size: number?,
-                Height: number?,
-                TextSize: number?,
-                TextColor3: Color3?,
-                Color: Color3?,
-                TextXAlignment: Enum.TextXAlignment?,
-                TextYAlignment: Enum.TextYAlignment?,
-                TextWrapped: boolean?,
-                DoesWrap: boolean?,
-                Visible: boolean?,
-            }
-            | string,
+        Info: | {
+            Text: string?,
+            Font: CustomFont?,
+            Size: number?,
+            Height: number?,
+            TextSize: number?,
+            TextColor3: Color3?,
+            Color: Color3?,
+            TextXAlignment: Enum.TextXAlignment?,
+            TextYAlignment: Enum.TextYAlignment?,
+            TextWrapped: boolean?,
+            DoesWrap: boolean?,
+            Visible: boolean?,
+        } | string,
         Font: CustomFont?,
         Idx: string?
     ) -> CustomFontText,
@@ -1173,7 +1171,10 @@ export type BaseGroupbox = {
         & ((self: Groupbox, Info: PlayerCardInfo) -> PlayerCard),
     AddTopUserBox: ((self: Groupbox, Idx: string, Info: TopUserBoxInfo) -> TopUserBox)
         & ((self: Groupbox, Info: TopUserBoxInfo) -> TopUserBox),
-    AddTabbox: (self: Groupbox, Info: { Name: string?, RainbowBorder: boolean?, Visible: boolean? } | string?) -> Tabbox,
+    AddTabbox: (
+        self: Groupbox,
+        Info: { Name: string?, RainbowBorder: boolean?, Visible: boolean? } | string?
+    ) -> Tabbox,
     AddDependencyBox: (self: Groupbox) -> DependencyBox,
     AddDependencyGroupbox: (self: Groupbox) -> DependencyGroupbox,
 }
@@ -1732,9 +1733,14 @@ export type Window = {
     SetSidebarWidth: (self: Window, Width: number) -> (),
     AddTab: (
         self: Window,
-        Info:
-            | { Name: string, Icon: string?, Description: string?, ShowInTabHolder: boolean?, Hidden: boolean?, Visible: boolean? }
-            | string,
+        Info: | {
+            Name: string,
+            Icon: string?,
+            Description: string?,
+            ShowInTabHolder: boolean?,
+            Hidden: boolean?,
+            Visible: boolean?,
+        } | string,
         Icon: string?,
         Description: string?
     ) -> Tab,
@@ -1917,9 +1923,12 @@ export type Library = {
     CopiedColor: { Color3 | number }?,
     ImageManager: {
         AddAsset: (AssetName: string, RobloxAssetId: number, URL: string, ForceRedownload: boolean?) -> nil,
-        GetAsset: (AssetName: string) -> string?,
-        DownloadAsset: (AssetName: string, ForceRedownload: boolean?) -> nil,
+        GetAsset: (AssetName: string) -> string,
+        DownloadAsset: (AssetName: string, ForceRedownload: boolean?) -> (boolean, string?),
     },
+    CompatibilityStatus: { [string]: any },
+    AssetStatus: { [string]: any },
+    AssetWarnings: { string },
 
     -- Methods
     UpdateKeybindFrame: (self: Library) -> (),
@@ -2014,7 +2023,13 @@ export type Library = {
     GetBetterColor: (self: Library, Color: Color3, Add: number) -> Color3,
     GetDarkerColor: (self: Library, Color: Color3) -> Color3,
     GetKeyString: (self: Library, KeyCode: Enum.KeyCode) -> string,
-    GetTextBounds: (self: Library, Text: string, Font: Font | CustomFont, Size: number, Width: number?) -> (number, number),
+    GetTextBounds: (
+        self: Library,
+        Text: string,
+        Font: Font | CustomFont,
+        Size: number,
+        Width: number?
+    ) -> (number, number),
     DownloadFont: (self: Library, Url: string, Options: { [string]: any }?) -> CustomFont,
     RegisterCustomFont: (self: Library, FontInfo: { [string]: any }) -> CustomFont,
     MouseIsOverFrame: (self: Library, Frame: GuiObject, Mouse: Vector2) -> boolean,
@@ -2030,15 +2045,23 @@ export type Library = {
     MakeCover: (self: Library, Holder: GuiObject, Place: string) -> Frame,
     MakeLine: (self: Library, Frame: GuiObject, Info: { AnchorPoint: Vector2?, Position: UDim2, Size: UDim2 }) -> Frame,
     MakeOutline: (self: Library, Frame: GuiObject, Corner: number?, ZIndex: number?) -> Frame,
-    AddDraggableButton: (self: Library, Text: string, Func: (DraggableButton) -> (), ExcludeScaling: boolean?) -> DraggableButton,
-    SetupPlatformButtons: (self: Library, WindowInfo: { [string]: any }, Platform: "Mobile" | "Desktop") -> (DraggableButton, DraggableButton),
+    AddDraggableButton: (
+        self: Library,
+        Text: string,
+        Func: (DraggableButton) -> (),
+        ExcludeScaling: boolean?
+    ) -> DraggableButton,
+    SetupPlatformButtons: (
+        self: Library,
+        WindowInfo: { [string]: any },
+        Platform: "Mobile" | "Desktop"
+    ) -> (DraggableButton, DraggableButton),
     CloseOpenMenus: (self: Library) -> boolean,
     AddDraggableMenu: (self: Library, Name: string, Info: DraggableMenuInfo?) -> (Frame, ScrollingFrame),
     SetKeybindMenuSize: (self: Library, Width: number?, Height: number?) -> (),
     AddKeybindMenuButton: (self: Library, Info: KeybindMenuButtonInfo | string) -> KeybindMenuButton,
-    AddKeybindMenuToggle: (
-        (self: Library, Idx: string, Info: KeybindMenuToggleInfo) -> KeybindMenuToggle
-    ) & ((self: Library, Info: KeybindMenuToggleInfo) -> KeybindMenuToggle),
+    AddKeybindMenuToggle: ((self: Library, Idx: string, Info: KeybindMenuToggleInfo) -> KeybindMenuToggle)
+        & ((self: Library, Info: KeybindMenuToggleInfo) -> KeybindMenuToggle),
     SetWatermarkVisibility: (self: Library, Visible: boolean) -> (),
     SetWatermark: (self: Library, Text: string) -> (),
     AddContextMenu: (
